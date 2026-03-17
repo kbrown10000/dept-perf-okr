@@ -36,7 +36,8 @@ export function useIsAdmin() {
     supabase.from('dept_departments').select('leader_email').eq('leader_email', 'kbrown@usdm.com').then(({ data }) => {
       // If user can see kbrown@usdm.com record, they might be admin
       // Check user email directly
-      setIsAdmin(user.email === 'kbrown@usdm.com')
+      const adminEmails = ['kbrown@usdm.com', 'jmorgan@usdm.com']
+      setIsAdmin(adminEmails.includes(user.email ?? ''))
       setAdminLoading(false)
     })
   }, [user, loading])
