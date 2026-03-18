@@ -24,6 +24,7 @@ import {
 } from '@/components/ui/select'
 import { DIMENSION_DEFINITIONS } from '@/lib/dimensions'
 import { DEPT_TYPE_DIMENSIONS } from '@/lib/dept-type-dimensions'
+import { DEPT_KPIS } from '@/lib/dept-kpis'
 import { Badge } from '@/components/ui/badge'
 import { toast } from 'sonner'
 
@@ -503,6 +504,54 @@ export default function AssessPage() {
                 </Card>
               )
             })}
+          </div>
+        )}
+
+        {/* Department KPIs — Operational Metrics */}
+        {!loadingScores && selectedDept && DEPT_KPIS[selectedDept.department_type] && (
+          <div className="mt-10">
+            <div className="mb-4">
+              <h2 className="text-xl font-bold text-[#10193C]">
+                📊 {selectedDept.name} — Key Performance Indicators
+              </h2>
+              <p className="mt-1 text-sm text-slate-500">
+                {DEPT_KPIS[selectedDept.department_type].intro}
+              </p>
+            </div>
+            <div className="grid gap-3 sm:grid-cols-2">
+              {DEPT_KPIS[selectedDept.department_type].kpis.map((kpi) => (
+                <Card key={kpi.name} className="border-slate-200 shadow-sm">
+                  <CardContent className="p-4">
+                    <h3 className="text-sm font-semibold text-[#10193C]">{kpi.name}</h3>
+                    <p className="mt-1 text-xs text-slate-500">{kpi.description}</p>
+                    
+                    {/* Benchmark bar */}
+                    <div className="mt-3 space-y-1">
+                      <div className="flex items-center gap-2 text-[11px]">
+                        <span className="inline-flex items-center justify-center rounded px-1.5 py-0.5 bg-red-100 text-red-700 font-medium min-w-[80px] text-center">
+                          {kpi.benchmark_low}
+                        </span>
+                        <span className="text-slate-400">→</span>
+                        <span className="inline-flex items-center justify-center rounded px-1.5 py-0.5 bg-yellow-100 text-yellow-700 font-medium min-w-[80px] text-center">
+                          {kpi.benchmark_mid}
+                        </span>
+                        <span className="text-slate-400">→</span>
+                        <span className="inline-flex items-center justify-center rounded px-1.5 py-0.5 bg-green-100 text-green-700 font-medium min-w-[80px] text-center">
+                          {kpi.benchmark_high}
+                        </span>
+                      </div>
+                    </div>
+                    
+                    <p className="mt-2 text-[10px] text-slate-400">
+                      <strong>Why it matters:</strong> {kpi.why_it_matters}
+                    </p>
+                    <p className="mt-1 text-[10px] text-slate-400">
+                      <strong>Source:</strong> {kpi.source}
+                    </p>
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
           </div>
         )}
 
