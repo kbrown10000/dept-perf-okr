@@ -88,7 +88,9 @@ function CycleSelector({
             : 'border-slate-300 bg-white text-slate-700'
         }`}
       >
-        <SelectValue />
+        <SelectValue>
+          {activeCycle.name}{activeCycle.status === 'active' ? ' ●' : ''}
+        </SelectValue>
       </SelectTrigger>
       <SelectContent className={dark ? 'border-slate-600 bg-[#0B1228] text-slate-200' : ''}>
         {cycles.map((cycle) => (
