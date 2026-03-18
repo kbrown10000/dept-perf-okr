@@ -16,6 +16,13 @@ import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
+import {
   RadarChart,
   Radar,
   PolarGrid,
@@ -50,6 +57,53 @@ interface PriorityItem {
   gap: number
   weightedGap: number
   score: number
+}
+
+// ---------------------------------------------------------------------------
+// Cycle Selector
+// ---------------------------------------------------------------------------
+function CycleSelector({
+  cycles,
+  activeCycle,
+  onCycleChange,
+  dark,
+}: {
+  cycles: AssessmentCycle[]
+  activeCycle: AssessmentCycle
+  onCycleChange: (cycle: AssessmentCycle) => void
+  dark?: boolean
+}) {
+  return (
+    <Select
+      value={activeCycle.id}
+      onValueChange={(id) => {
+        const cycle = cycles.find((c) => c.id === id)
+        if (cycle) onCycleChange(cycle)
+      }}
+    >
+      <SelectTrigger
+        className={`w-[200px] ${
+          dark
+            ? 'border-slate-600 bg-[#0B1228] text-slate-200 hover:border-[#64C4DD]'
+            : 'border-slate-300 bg-white text-slate-700'
+        }`}
+      >
+        <SelectValue />
+      </SelectTrigger>
+      <SelectContent className={dark ? 'border-slate-600 bg-[#0B1228] text-slate-200' : ''}>
+        {cycles.map((cycle) => (
+          <SelectItem
+            key={cycle.id}
+            value={cycle.id}
+            className={dark ? 'text-slate-200 focus:bg-slate-700 focus:text-white' : ''}
+          >
+            {cycle.name}
+            {cycle.status === 'active' ? ' ●' : ''}
+          </SelectItem>
+        ))}
+      </SelectContent>
+    </Select>
+  )
 }
 
 // ---------------------------------------------------------------------------
@@ -108,12 +162,14 @@ function AdminDashboard({
   prevScores,
   activeCycle,
   cycles,
+  onCycleChange,
 }: {
   departments: Department[]
   scores: ScoreMap
   prevScores: PrevScoreMap
   activeCycle: AssessmentCycle
   cycles: AssessmentCycle[]
+  onCycleChange: (cycle: AssessmentCycle) => void
 }) {
   // Priority ranker: top 5 improvement opportunities
   const priorities = useMemo<PriorityItem[]>(() => {
@@ -174,9 +230,14 @@ function AdminDashboard({
           <h1 className="text-2xl font-bold tracking-tight text-[#64C4DD]">
             USDM Portfolio Command Center
           </h1>
-          <p className="mt-1 text-sm text-slate-400">
-            {activeCycle.name} &middot; {activeCycle.status.toUpperCase()}
-          </p>
+          <div className="mt-2">
+            <CycleSelector
+              cycles={cycles}
+              activeCycle={activeCycle}
+              onCycleChange={onCycleChange}
+              dark
+            />
+          </div>
         </div>
         <div className="flex items-center gap-3 text-xs text-slate-500">
           <span className="inline-block h-3 w-3 rounded-sm" style={{ background: '#DC2626' }} /> L1-2
@@ -429,6 +490,7 @@ function LeaderDashboard({
   activeCycle,
   cycles,
   allScoresByCycle,
+  onCycleChange,
 }: {
   department: Department
   scores: ScoreMap
@@ -437,6 +499,7 @@ function LeaderDashboard({
   activeCycle: AssessmentCycle
   cycles: AssessmentCycle[]
   allScoresByCycle: { [cycleId: string]: { [dimension: string]: number } }
+  onCycleChange: (cycle: AssessmentCycle) => void
 }) {
   const deptScores = scores[department.id] ?? {}
 
@@ -488,9 +551,16 @@ function LeaderDashboard({
       {/* Header */}
       <div className="mb-8">
         <h1 className="text-2xl font-bold text-[#10193C]">{department.name}</h1>
-        <p className="mt-1 text-sm text-slate-500">
-          {activeCycle.name} &middot; {getScoreLabel(overallAvg)} ({overallAvg.toFixed(1)}/5.0)
-        </p>
+        <div className="mt-2 flex items-center gap-3">
+          <CycleSelector
+            cycles={cycles}
+            activeCycle={activeCycle}
+            onCycleChange={onCycleChange}
+          />
+          <span className="text-sm text-slate-500">
+            {getScoreLabel(overallAvg)} ({overallAvg.toFixed(1)}/5.0)
+          </span>
+        </div>
       </div>
 
       {/* Score cards summary */}
@@ -743,7 +813,7 @@ function LeaderDashboard({
 export default function DashboardPage() {
   const { isAdmin, loading: authLoading, user } = useIsAdmin()
   const { departments, loading: deptsLoading } = useDepartments()
-  const { cycles, activeCycle, loading: cyclesLoading } = useCycles()
+  const { cycles, activeCycle, setActiveCycle, loading: cyclesLoading } = useCycles()
 
   const [scores, setScores] = useState<DimensionScore[]>([])
   const [prevCycleScores, setPrevCycleScores] = useState<DimensionScore[]>([])
@@ -871,6 +941,7 @@ export default function DashboardPage() {
         prevScores={prevScoreMap}
         activeCycle={activeCycle}
         cycles={cycles}
+        onCycleChange={setActiveCycle}
       />
     )
   }
@@ -902,6 +973,7 @@ export default function DashboardPage() {
       activeCycle={activeCycle}
       cycles={cycles}
       allScoresByCycle={allScoresByCycle}
+      onCycleChange={setActiveCycle}
     />
   )
 }

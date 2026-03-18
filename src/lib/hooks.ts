@@ -62,20 +62,63 @@ export function useDepartments() {
 
 export function useCycles() {
   const [cycles, setCycles] = useState<AssessmentCycle[]>([])
-  const [activeCycle, setActiveCycle] = useState<AssessmentCycle | null>(null)
+  const [selectedCycle, setSelectedCycle] = useState<AssessmentCycle | null>(null)
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
     const supabase = createClient()
-    supabase.from('dept_assessment_cycles').select('*').order('year', { ascending: false }).order('quarter', { ascending: false }).then(({ data, error }) => {
-      if (data) {
-        setCycles(data)
-        const active = data.find(c => c.status === 'active')
-        setActiveCycle(active || data[0] || null)
+
+    const fetchCycles = async () => {
+      const { data: cycleData } = await supabase
+        .from('dept_assessment_cycles')
+        .select('*')
+        .order('year', { ascending: false })
+        .order('quarter', { ascending: false })
+
+      if (!cycleData || cycleData.length === 0) {
+        setLoading(false)
+        return
       }
+
+      setCycles(cycleData)
+
+      // Try active cycle first
+      const active = cycleData.find(c => c.status === 'active')
+      if (active) {
+        // Check if active cycle has scores
+        const { count } = await supabase
+          .from('dept_dimension_scores')
+          .select('id', { count: 'exact', head: true })
+          .eq('cycle_id', active.id)
+
+        if (count && count > 0) {
+          setSelectedCycle(active)
+          setLoading(false)
+          return
+        }
+      }
+
+      // Active cycle empty — find most recent cycle with scores
+      for (const cycle of cycleData) {
+        const { count } = await supabase
+          .from('dept_dimension_scores')
+          .select('id', { count: 'exact', head: true })
+          .eq('cycle_id', cycle.id)
+
+        if (count && count > 0) {
+          setSelectedCycle(cycle)
+          setLoading(false)
+          return
+        }
+      }
+
+      // No scores anywhere — default to active or first
+      setSelectedCycle(active || cycleData[0])
       setLoading(false)
-    })
+    }
+
+    fetchCycles()
   }, [])
 
-  return { cycles, activeCycle, loading }
+  return { cycles, activeCycle: selectedCycle, setActiveCycle: setSelectedCycle, loading }
 }
