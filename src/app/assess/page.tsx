@@ -343,8 +343,8 @@ export default function AssessPage() {
 
         {/* Dimension Cards */}
         {!loadingScores && selectedDeptId && (
-          <div id="maturity-dimensions"></div>
           <div className="space-y-4">
+            <div id="maturity-dimensions"></div>
             {DIMENSIONS.map((dimension, index) => {
               const entry = scores[dimension] ?? {
                 score: 1.0,
