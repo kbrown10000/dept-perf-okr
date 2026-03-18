@@ -328,8 +328,22 @@ export default function AssessPage() {
           </div>
         )}
 
+        {/* Quick navigation */}
+        {!loadingScores && selectedDeptId && selectedDept && DEPT_KPIS[selectedDept.department_type] && (
+          <div className="mb-4 flex flex-wrap gap-2 rounded-lg bg-slate-50 border border-slate-200 p-3">
+            <span className="text-xs font-medium text-slate-500 self-center mr-1">Jump to:</span>
+            <a href="#maturity-dimensions" className="text-xs font-medium text-[#10193C] bg-white border border-slate-200 rounded-md px-3 py-1.5 hover:bg-slate-100 transition-colors">
+              🎯 Maturity Dimensions
+            </a>
+            <a href="#department-kpis" className="text-xs font-medium text-[#10193C] bg-white border border-slate-200 rounded-md px-3 py-1.5 hover:bg-slate-100 transition-colors">
+              📊 Department KPIs
+            </a>
+          </div>
+        )}
+
         {/* Dimension Cards */}
         {!loadingScores && selectedDeptId && (
+          <div id="maturity-dimensions"></div>
           <div className="space-y-4">
             {DIMENSIONS.map((dimension, index) => {
               const entry = scores[dimension] ?? {
@@ -509,7 +523,7 @@ export default function AssessPage() {
 
         {/* Department KPIs — Operational Metrics */}
         {!loadingScores && selectedDept && DEPT_KPIS[selectedDept.department_type] && (
-          <div className="mt-10">
+          <div id="department-kpis" className="mt-10 scroll-mt-20">
             <div className="mb-4">
               <h2 className="text-xl font-bold text-[#10193C]">
                 📊 {selectedDept.name} — Key Performance Indicators
