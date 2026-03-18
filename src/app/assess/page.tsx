@@ -23,6 +23,7 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { DIMENSION_DEFINITIONS } from '@/lib/dimensions'
+import { DEPT_TYPE_DIMENSIONS } from '@/lib/dept-type-dimensions'
 import { Badge } from '@/components/ui/badge'
 import { toast } from 'sonner'
 
@@ -365,11 +366,11 @@ export default function AssessPage() {
                         </span>
                       </div>
                     </div>
-                    {/* Dimension definition */}
+                    {/* Dimension definition — Generic */}
                     {DIMENSION_DEFINITIONS[dimension] && (
                       <details className="mt-2 rounded-md bg-slate-50 border border-slate-200">
                         <summary className="cursor-pointer px-3 py-2 text-xs font-medium text-slate-600 hover:text-slate-800">
-                          ℹ️ What this measures &amp; scoring guide
+                          ℹ️ General scoring guide
                         </summary>
                         <div className="px-3 pb-3 space-y-2">
                           <p className="text-xs text-slate-600">
@@ -397,6 +398,49 @@ export default function AssessPage() {
                                     {level.toUpperCase()}
                                   </span>
                                   <span className="text-slate-600">{desc}</span>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        </div>
+                      </details>
+                    )}
+                    {/* Dimension definition — Department-specific */}
+                    {selectedDept && DEPT_TYPE_DIMENSIONS[selectedDept.department_type]?.[dimension] && (
+                      <details className="mt-1 rounded-md bg-blue-50 border border-blue-200" open>
+                        <summary className="cursor-pointer px-3 py-2 text-xs font-medium text-blue-700 hover:text-blue-900">
+                          🎯 {selectedDept.name} — specific criteria &amp; key metrics
+                        </summary>
+                        <div className="px-3 pb-3 space-y-2">
+                          <div>
+                            <p className="text-[10px] font-semibold text-blue-500 uppercase tracking-wider mb-1">Key Metrics for {selectedDept.department_type}</p>
+                            <ul className="list-disc list-inside text-xs text-blue-700 space-y-0.5">
+                              {DEPT_TYPE_DIMENSIONS[selectedDept.department_type][dimension].key_metrics.map((m, i) => (
+                                <li key={i}>{m}</li>
+                              ))}
+                            </ul>
+                          </div>
+                          <div className="space-y-1 mt-2">
+                            <p className="text-[10px] font-semibold text-blue-500 uppercase tracking-wider">{selectedDept.department_type} Scoring Criteria</p>
+                            <div className="grid gap-1.5">
+                              {Object.entries(DEPT_TYPE_DIMENSIONS[selectedDept.department_type][dimension])
+                                .filter(([key]) => key.startsWith('l'))
+                                .map(([level, desc]) => (
+                                <div key={level} className="flex gap-2 text-[11px]">
+                                  <span
+                                    className="shrink-0 inline-flex items-center justify-center rounded px-1.5 py-0.5 font-bold text-white text-[10px]"
+                                    style={{
+                                      backgroundColor:
+                                        level === 'l1' ? '#DC2626' :
+                                        level === 'l2' ? '#DC2626' :
+                                        level === 'l3' ? '#F3CF4F' :
+                                        level === 'l4' ? '#22C55E' : '#64C4DD',
+                                      color: level === 'l3' ? '#10193C' : '#FFFFFF',
+                                    }}
+                                  >
+                                    {level.toUpperCase()}
+                                  </span>
+                                  <span className="text-blue-800">{desc as string}</span>
                                 </div>
                               ))}
                             </div>
