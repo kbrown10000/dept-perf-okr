@@ -406,7 +406,9 @@ export default function OKRsPage() {
                   onValueChange={(val) => setSelectedDeptId(val as string)}
                 >
                   <SelectTrigger className="w-[220px]">
-                    <SelectValue placeholder="Select department" />
+                    <SelectValue>
+                      {departments.find(d => d.id === selectedDeptId)?.name || 'Select department'}
+                    </SelectValue>
                   </SelectTrigger>
                   <SelectContent>
                     {departments.map((dept) => (

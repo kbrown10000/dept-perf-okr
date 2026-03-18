@@ -521,7 +521,9 @@ function BackfillTab() {
                 <Label className="text-white/80">Department</Label>
                 <Select value={selectedDept} onValueChange={(v) => v && setSelectedDept(v)}>
                   <SelectTrigger className="bg-white/5 text-white border-white/10 w-full">
-                    <SelectValue placeholder="Select department" />
+                    <SelectValue>
+                      {departments.find(d => d.id === selectedDept)?.name || 'Select department'}
+                    </SelectValue>
                   </SelectTrigger>
                   <SelectContent>
                     {departments.map(d => (
@@ -534,7 +536,9 @@ function BackfillTab() {
                 <Label className="text-white/80">Cycle</Label>
                 <Select value={selectedCycle} onValueChange={(v) => v && setSelectedCycle(v)}>
                   <SelectTrigger className="bg-white/5 text-white border-white/10 w-full">
-                    <SelectValue placeholder="Select cycle" />
+                    <SelectValue>
+                      {cycles.find(c => c.id === selectedCycle)?.name || 'Select cycle'}
+                    </SelectValue>
                   </SelectTrigger>
                   <SelectContent>
                     {cycles.map(c => (

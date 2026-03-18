@@ -281,7 +281,9 @@ export default function CheckInPage() {
             onValueChange={(val) => setSelectedDeptId(val as string)}
           >
             <SelectTrigger className="w-64">
-              <SelectValue placeholder="Select department" />
+              <SelectValue>
+                {departments.find(d => d.id === selectedDeptId)?.name || 'Select department'}
+              </SelectValue>
             </SelectTrigger>
             <SelectContent>
               {departments.map((dept) => (

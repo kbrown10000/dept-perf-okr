@@ -7,6 +7,7 @@ import {
   DIMENSIONS,
   getScoreColor,
   getScoreLabel,
+  DIMENSION_SHORT,
   type Dimension,
   type DimensionScore,
 } from '@/lib/types'
@@ -21,6 +22,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
+import { DIMENSION_DEFINITIONS } from '@/lib/dimensions'
 import { Badge } from '@/components/ui/badge'
 import { toast } from 'sonner'
 
@@ -257,7 +259,9 @@ export default function AssessPage() {
                   onValueChange={(v) => v && setSelectedDeptId(v)}
                 >
                   <SelectTrigger className="w-full">
-                    <SelectValue placeholder="Select department..." />
+                    <SelectValue>
+                      {departments.find(d => d.id === selectedDeptId)?.name || 'Select department...'}
+                    </SelectValue>
                   </SelectTrigger>
                   <SelectContent>
                     {departments.map((dept) => (
@@ -361,6 +365,45 @@ export default function AssessPage() {
                         </span>
                       </div>
                     </div>
+                    {/* Dimension definition */}
+                    {DIMENSION_DEFINITIONS[dimension] && (
+                      <details className="mt-2 rounded-md bg-slate-50 border border-slate-200">
+                        <summary className="cursor-pointer px-3 py-2 text-xs font-medium text-slate-600 hover:text-slate-800">
+                          ℹ️ What this measures &amp; scoring guide
+                        </summary>
+                        <div className="px-3 pb-3 space-y-2">
+                          <p className="text-xs text-slate-600">
+                            {DIMENSION_DEFINITIONS[dimension].description}
+                          </p>
+                          <p className="text-xs text-slate-500">
+                            <strong>Measures:</strong> {DIMENSION_DEFINITIONS[dimension].what_it_measures}
+                          </p>
+                          <div className="space-y-1 mt-2">
+                            <p className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider">Scoring Guide</p>
+                            <div className="grid gap-1.5">
+                              {Object.entries(DIMENSION_DEFINITIONS[dimension].scoring_guide).map(([level, desc]) => (
+                                <div key={level} className="flex gap-2 text-[11px]">
+                                  <span
+                                    className="shrink-0 inline-flex items-center justify-center rounded px-1.5 py-0.5 font-bold text-white text-[10px]"
+                                    style={{
+                                      backgroundColor:
+                                        level === 'l1' ? '#DC2626' :
+                                        level === 'l2' ? '#DC2626' :
+                                        level === 'l3' ? '#F3CF4F' :
+                                        level === 'l4' ? '#22C55E' : '#64C4DD',
+                                      color: level === 'l3' ? '#10193C' : '#FFFFFF',
+                                    }}
+                                  >
+                                    {level.toUpperCase()}
+                                  </span>
+                                  <span className="text-slate-600">{desc}</span>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        </div>
+                      </details>
+                    )}
                   </CardHeader>
                   <CardContent className="space-y-4 pt-0">
                     {/* Score selector */}

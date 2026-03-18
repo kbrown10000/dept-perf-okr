@@ -307,7 +307,9 @@ export default function HistoryPage() {
                 color: '#FFFFFF',
               }}
             >
-              <SelectValue placeholder="All Departments" />
+              <SelectValue>
+                {departments.find(d => d.id === selectedDeptId)?.name || 'All Departments'}
+              </SelectValue>
             </SelectTrigger>
             <SelectContent>
               {departments.map((dept) => (
@@ -520,12 +522,14 @@ export default function HistoryPage() {
                         : undefined
                     }
                   >
-                    <SelectValue placeholder="Select quarter" />
+                    <SelectValue>
+                      {cycles.find(c => c.id === compareA)?.name || 'Select quarter'}
+                    </SelectValue>
                   </SelectTrigger>
                   <SelectContent>
                     {cycles.map((c) => (
                       <SelectItem key={c.id} value={c.id}>
-                        Q{c.quarter} {c.year}
+                        {c.name}
                       </SelectItem>
                     ))}
                   </SelectContent>
@@ -554,12 +558,14 @@ export default function HistoryPage() {
                         : undefined
                     }
                   >
-                    <SelectValue placeholder="Select quarter" />
+                    <SelectValue>
+                      {cycles.find(c => c.id === compareB)?.name || 'Select quarter'}
+                    </SelectValue>
                   </SelectTrigger>
                   <SelectContent>
                     {cycles.map((c) => (
                       <SelectItem key={c.id} value={c.id}>
-                        Q{c.quarter} {c.year}
+                        {c.name}
                       </SelectItem>
                     ))}
                   </SelectContent>
