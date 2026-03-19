@@ -996,6 +996,10 @@ export const DEPT_NAME_TO_TYPE: Record<string, string> = {
   'Quality & Compliance': 'Quality',
   'Resource Management Office': 'RMO',
   'Partnerships': 'Sales/Growth',
+  'Operations': 'Operations',
+  'Contracts & Legal': 'Legal',
+  'Solutions': 'Solutions',
+  'Growth Leadership': 'Growth Leadership',
 }
 
 export function getDeptTypeDimensions(departmentType: string): DeptTypeDimensions | undefined {
