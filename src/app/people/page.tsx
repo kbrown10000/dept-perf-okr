@@ -56,38 +56,41 @@ interface PersonData extends PerformanceScore, PersonCost {
   parsed_role_alignment_flags?: any;
 }
 
-const departmentMapping: { [key: string]: string } = {
-  "Delivery - Professional Services & Consulting": "Delivery Operations",
-  "Delivery - Managed Services": "Delivery Operations",
-  "Delivery": "Delivery Operations",
-  "Growth - Sales": "Sales & Growth",
-  "Growth - Solutions": "Sales & Growth",
-  "Growth - Partnership": "Sales & Growth",
-  "Growth - Partnerships": "Sales & Growth",
-  "Growth - Professional Services": "Sales & Growth",
-  "Growth": "Sales & Growth",
-  "Growth - Growth Leadership": "Growth Leadership",
-  "Growth - Marketing": "Marketing",
-  "Administration - Finance": "Finance & Accounting",
-  "Administration - IT": "IT / Infrastructure",
-  "Administration - Human Resources": "HR Administration",
-  "Administration - Operations": "Operations",
-  "Administration - Contracts": "Operations",
-  "Administration - Contract Management": "Operations",
-  "Administration": "Operations",
-  "Talent & Recruiting - Recruitment": "Staffing / Talent Acquisition",
-  "Talent & Recruiting": "Staffing / Talent Acquisition",
-};
+// Department mapping — ordered from most specific to least specific.
+// First match wins, so specific child departments must come before parent catch-alls.
+const departmentMappingRules: Array<{ match: string; exact?: boolean; target: string }> = [
+  // Marketing (must be before "Growth" catch-all)
+  { match: "Growth - Marketing", target: "Marketing" },
+  // Growth Leadership (must be before "Growth" catch-all)
+  { match: "Growth - Growth Leadership", target: "Growth Leadership" },
+  // Sales & Growth (specific children first)
+  { match: "Growth - Sales", target: "Sales & Growth" },
+  { match: "Growth - Solutions", target: "Sales & Growth" },
+  { match: "Growth - Partnership", target: "Sales & Growth" },
+  { match: "Growth - Professional Services", target: "Sales & Growth" },
+  { match: "Growth", target: "Sales & Growth" }, // catch-all for "Growth" without child
+  // Delivery
+  { match: "Delivery - Technical Services", target: "Delivery Operations" },
+  { match: "Delivery - Professional Services", target: "Delivery Operations" },
+  { match: "Delivery", target: "Delivery Operations" },
+  // Administration
+  { match: "Administration - Finance", target: "Finance & Accounting" },
+  { match: "Administration - IT", target: "IT / Infrastructure" },
+  { match: "Administration - Human Resources", target: "HR Administration" },
+  { match: "Administration - Operations", target: "Operations" },
+  { match: "Administration - Contracts", target: "Operations" },
+  { match: "Administration", target: "Operations" },
+  // Talent & Recruiting
+  { match: "Talent & Recruiting", target: "Staffing / Talent Acquisition" },
+];
 
 const getDepartmentDisplayName = (department: string): string => {
-  const mapped = Object.keys(departmentMapping).find(key => {
-    if (key.endsWith('*')) {
-      const prefix = key.slice(0, -1);
-      return department.startsWith(prefix);
-    }
-    return department === key;
-  });
-  return mapped ? departmentMapping[mapped] : department;
+  // Try exact match first, then startsWith (longest prefix match)
+  const exactMatch = departmentMappingRules.find(r => department === r.match);
+  if (exactMatch) return exactMatch.target;
+  const prefixMatch = departmentMappingRules.find(r => department.startsWith(r.match));
+  if (prefixMatch) return prefixMatch.target;
+  return department;
 };
 
 const getScoreColor = (score: number): string => {
