@@ -42,6 +42,7 @@ interface PerformanceScore {
   concerns: string;
   specific_actions: string;
   role_alignment_flags: string; // JSON string
+  active_status: string; // 'active', 'inactive', 'departed'
 }
 
 interface PersonCost {
@@ -128,6 +129,7 @@ const PeoplePage: React.FC = () => {
   const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set());
   const [sortBy, setSortBy] = useState<keyof PersonData>('person_name');
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('asc');
+  const [showInactive, setShowInactive] = useState<boolean>(false);
   const supabase = createClient();
 
   const availableDepartments = useMemo(() => {
@@ -182,8 +184,12 @@ const PeoplePage: React.FC = () => {
 
   const filteredPeople = useMemo(() => {
     let filtered = peopleData;
+    // Filter by active status
+    if (!showInactive) {
+      filtered = filtered.filter(p => p.active_status === 'active' || !p.active_status);
+    }
     if (selectedDepartment !== 'All Departments') {
-      filtered = peopleData.filter(person => getDepartmentDisplayName(person.department) === selectedDepartment);
+      filtered = filtered.filter(person => getDepartmentDisplayName(person.department) === selectedDepartment);
     }
 
     // Sorting logic
@@ -199,7 +205,7 @@ const PeoplePage: React.FC = () => {
       }
       return 0;
     });
-  }, [peopleData, selectedDepartment, sortBy, sortOrder]);
+  }, [peopleData, selectedDepartment, sortBy, sortOrder, showInactive]);
 
   const handleSort = (column: keyof PersonData) => {
     if (sortBy === column) {
@@ -273,7 +279,7 @@ const PeoplePage: React.FC = () => {
     <div className="container mx-auto p-8 bg-[#0a101e] text-gray-100 min-h-screen">
       <h1 className="text-4xl font-bold mb-8 text-white">People Performance</h1>
 
-      <div className="mb-6">
+      <div className="mb-6 flex items-center gap-4 flex-wrap">
         <Select onValueChange={(value: string | null) => { if (value) setSelectedDepartment(value) }} defaultValue={selectedDepartment}>
           <SelectTrigger className="w-[280px] bg-gray-800 text-white border-gray-700">
             <SelectValue>{selectedDepartment}</SelectValue>
@@ -286,6 +292,17 @@ const PeoplePage: React.FC = () => {
             ))}
           </SelectContent>
         </Select>
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => setShowInactive(!showInactive)}
+          className={showInactive
+            ? "bg-gray-700 text-white border-gray-500 hover:bg-gray-600"
+            : "bg-gray-800 text-gray-400 border-gray-700 hover:bg-gray-700 hover:text-white"
+          }
+        >
+          {showInactive ? '👁 Showing Inactive/Departed' : '👁 Hide Inactive/Departed'}
+        </Button>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
@@ -412,7 +429,17 @@ const PeoplePage: React.FC = () => {
                         {expandedRows.has(person.person_name) ? <ChevronUp /> : <ChevronDown />}
                       </Button>
                     </TableCell>
-                    <TableCell className="font-medium text-white">{person.person_name}</TableCell>
+                    <TableCell className="font-medium text-white">
+                      <span className="flex items-center gap-2">
+                        {person.person_name}
+                        {person.active_status === 'inactive' && (
+                          <span className="inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-medium bg-gray-700 text-gray-400 border border-gray-600">Inactive</span>
+                        )}
+                        {person.active_status === 'departed' && (
+                          <span className="inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-medium bg-red-900/30 text-red-400 border border-red-800">Departed</span>
+                        )}
+                      </span>
+                    </TableCell>
                     <TableCell className="text-gray-300">{person.role_function || person.performance_tier}</TableCell>
                     <TableCell>
                       <Badge className={getEmploymentTypeBadgeColor(person.employment_type)}>
