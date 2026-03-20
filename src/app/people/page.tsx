@@ -150,33 +150,80 @@ const PeoplePage: React.FC = () => {
   const employmentTypeFilters = ['All', 'W2 Only', 'Contractors Only', 'W2 Salaried', 'W2 Hourly', 'Contractor'];
 
   const getRoleScorecardTemplate = (roleFunction: string, utilization_pct: number, employment_type: string): string => {
-    const lowerRoleFunction = roleFunction.toLowerCase();
+    const lowerRole = roleFunction.toLowerCase();
+    const isContractor = employment_type === 'Contractor';
+    const isBillable = utilization_pct > 0;
 
-    if (lowerRoleFunction.includes('account manager') || lowerRoleFunction.includes('account executive') || lowerRoleFunction.includes('business development') || lowerRoleFunction.includes('sales leadership') || lowerRoleFunction.includes('staffing account manager')) {
+    // 1. ROLE-SPECIFIC TEMPLATES (apply to ALL employment types)
+    // Sales roles
+    if (lowerRole.includes('account manager') || lowerRole.includes('account executive') || lowerRole.includes('business development') || lowerRole.includes('sales leadership') || lowerRole.includes('staffing account manager')) {
       return 'Sales_AE_AM';
     }
-    if (lowerRoleFunction.includes('pod leader')) {
+    // Pod leaders
+    if (lowerRole.includes('pod leader')) {
       return 'Hybrid_PodLeader';
     }
-    if (utilization_pct > 0 && employment_type === 'Contractor') {
-      return 'Tier1_Contingent_Billable';
+    // SVP / Strategic roles
+    if (lowerRole.includes('strategic customer') || lowerRole.includes('svp')) {
+      return 'Strategic_Customer_Engagement';
     }
-    if (utilization_pct > 0 && employment_type === 'W2 Hourly') {
-      return utilization_pct < 50 ? 'Tier2_W2Hourly_LightlyBillable' : 'Tier2_W2Hourly_Billable';
-    }
-    if (utilization_pct > 0 && employment_type === 'W2 Salaried') {
-      return utilization_pct < 50 ? 'Tier3_W2Salaried_LightlyBillable' : 'Tier3_W2Salaried_Billable';
-    }
-    if (lowerRoleFunction.includes('leadership') || lowerRoleFunction.includes('manager')) { // non-sales leadership
-      return 'Manager_Scorecard';
-    }
-    if (lowerRoleFunction.includes('finance') || lowerRoleFunction.includes('hr') || lowerRoleFunction.includes('it') || lowerRoleFunction.includes('operations') || lowerRoleFunction.includes('recruiting')) {
-      // Check if 'Support_Corporate' exists in bonusCriteria, otherwise default
-      const supportCorporateExists = bonusCriteria.some(c => c.role_title === 'Support_Corporate');
-      return supportCorporateExists ? 'Support_Corporate' : 'Manager_Scorecard'; // Fallback as per instructions
+    // Partner roles
+    if (lowerRole.includes('partner')) {
+      return 'Sales_AE_AM'; // Partners evaluated like sales
     }
 
-    return 'General_Scorecard'; // Default fallback if no match
+    // 2. NON-BILLABLE CONTRACTOR ROLE-SPECIFIC TEMPLATES
+    if (isContractor && !isBillable) {
+      // Content Marketing contractors
+      if (lowerRole.includes('content marketing') || lowerRole.includes('content')) {
+        return 'ContentMarketing_NonBillable';
+      }
+      // Engagement & Communications contractors
+      if (lowerRole.includes('engagement') || lowerRole.includes('communications')) {
+        return 'EngagementComms_NonBillable';
+      }
+      // IT Administration contractors
+      if (lowerRole.includes('it admin') || lowerRole.includes('it ')) {
+        return 'ITAdmin_NonBillable';
+      }
+      // DevOps contractors
+      if (lowerRole.includes('devops') || lowerRole.includes('automation')) {
+        return 'DevOps_NonBillable';
+      }
+      // Catch-all for other non-billable contractors
+      return 'Tier1_Contingent_NonBillable';
+    }
+
+    // 3. BILLABLE CONTRACTORS
+    if (isContractor && isBillable) {
+      return 'Tier1_Contingent_Billable';
+    }
+
+    // 4. W2 EMPLOYEES — tier + billable status based
+    if (employment_type === 'W2 Hourly') {
+      if (!isBillable) return 'Tier2_W2Hourly_NonBillable';
+      return utilization_pct < 50 ? 'Tier2_W2Hourly_LightlyBillable' : 'Tier2_W2Hourly_Billable';
+    }
+    if (employment_type === 'W2 Salaried') {
+      if (!isBillable) return 'Tier3_W2Salaried_NonBillable';
+      return utilization_pct < 50 ? 'Tier3_W2Salaried_LightlyBillable' : 'Tier3_W2Salaried_Billable';
+    }
+
+    // 5. LEADERSHIP / MANAGEMENT (non-sales)
+    if (lowerRole.includes('leadership') || lowerRole.includes('manager') || lowerRole.includes('director')) {
+      return 'Manager_Scorecard';
+    }
+
+    // 6. SUPPORT / CORPORATE FUNCTIONS
+    if (lowerRole.includes('finance') || lowerRole.includes('hr') || lowerRole.includes('it') || lowerRole.includes('operations') || lowerRole.includes('recruiting') || lowerRole.includes('compensation') || lowerRole.includes('contracts') || lowerRole.includes('legal')) {
+      return 'Support_Corporate';
+    }
+
+    // 7. DEFAULT — use tier if we can determine it, otherwise generic
+    if (isContractor) return 'Tier1_Contingent_Billable';
+    if (employment_type === 'W2 Hourly') return 'Tier2_W2Hourly_Billable';
+    if (employment_type === 'W2 Salaried') return 'Tier3_W2Salaried_Billable';
+    return 'General_Scorecard';
   };
 
   const availableDepartments = useMemo(() => {
