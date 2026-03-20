@@ -171,7 +171,11 @@ const PeoplePage: React.FC = () => {
 
           return {
             ...score,
-            ...cost,
+            // Only take cost fields — never overwrite score's department or person_name
+            employment_type: cost.employment_type || 'N/A',
+            annual_cost: cost.annual_cost || 0,
+            effective_bill_rate: cost.effective_bill_rate || 0,
+            margin_per_hour: cost.margin_per_hour || 0,
             parsed_role_alignment_flags,
           };
         });
