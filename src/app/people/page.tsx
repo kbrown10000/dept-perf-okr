@@ -21,7 +21,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { ChevronDown, ChevronUp } from 'lucide-react';
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, Radar } from 'recharts';
 
 interface PerformanceScore {
   person_name: string;
@@ -43,6 +43,7 @@ interface PerformanceScore {
   specific_actions: string;
   role_alignment_flags: string; // JSON string
   active_status: string; // 'active', 'inactive', 'departed'
+  raw_data: any; // JSONB field for role-specific metrics
 }
 
 interface PersonCost {
@@ -53,9 +54,21 @@ interface PersonCost {
   margin_per_hour: number;
 }
 
+interface BonusCriterion {
+  role_title: string;
+  criterion_name: string;
+  weight_pct: number;
+  data_source: string;
+  threshold_min: number;
+  target_value: number;
+  stretch_value: number;
+  scoring_notes: string;
+}
+
 interface PersonData extends PerformanceScore, PersonCost {
   parsed_role_alignment_flags?: any;
 }
+
 
 // Department mapping — ordered from most specific to least specific.
 // First match wins, so specific child departments must come before parent catch-alls.
@@ -125,12 +138,46 @@ const getEmploymentTypeBadgeColor = (type: string): string => {
 
 const PeoplePage: React.FC = () => {
   const [peopleData, setPeopleData] = useState<PersonData[]>([]);
+  const [bonusCriteria, setBonusCriteria] = useState<BonusCriterion[]>([]);
   const [selectedDepartment, setSelectedDepartment] = useState<string>('All Departments');
   const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set());
   const [sortBy, setSortBy] = useState<keyof PersonData>('person_name');
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('asc');
   const [showInactive, setShowInactive] = useState<boolean>(false);
+  const [selectedEmploymentType, setSelectedEmploymentType] = useState<string>('All');
   const supabase = createClient();
+
+  const employmentTypeFilters = ['All', 'W2 Only', 'Contractors Only', 'W2 Salaried', 'W2 Hourly', 'Contractor'];
+
+  const getRoleScorecardTemplate = (roleFunction: string, utilization_pct: number, employment_type: string): string => {
+    const lowerRoleFunction = roleFunction.toLowerCase();
+
+    if (lowerRoleFunction.includes('account manager') || lowerRoleFunction.includes('account executive') || lowerRoleFunction.includes('business development') || lowerRoleFunction.includes('sales leadership') || lowerRoleFunction.includes('staffing account manager')) {
+      return 'Sales_AE_AM';
+    }
+    if (lowerRoleFunction.includes('pod leader')) {
+      return 'Hybrid_PodLeader';
+    }
+    if (utilization_pct > 0 && employment_type === 'Contractor') {
+      return 'Tier1_Contingent_Billable';
+    }
+    if (utilization_pct > 0 && employment_type === 'W2 Hourly') {
+      return utilization_pct < 50 ? 'Tier2_W2Hourly_LightlyBillable' : 'Tier2_W2Hourly_Billable';
+    }
+    if (utilization_pct > 0 && employment_type === 'W2 Salaried') {
+      return utilization_pct < 50 ? 'Tier3_W2Salaried_LightlyBillable' : 'Tier3_W2Salaried_Billable';
+    }
+    if (lowerRoleFunction.includes('leadership') || lowerRoleFunction.includes('manager')) { // non-sales leadership
+      return 'Manager_Scorecard';
+    }
+    if (lowerRoleFunction.includes('finance') || lowerRoleFunction.includes('hr') || lowerRoleFunction.includes('it') || lowerRoleFunction.includes('operations') || lowerRoleFunction.includes('recruiting')) {
+      // Check if 'Support_Corporate' exists in bonusCriteria, otherwise default
+      const supportCorporateExists = bonusCriteria.some(c => c.role_title === 'Support_Corporate');
+      return supportCorporateExists ? 'Support_Corporate' : 'Manager_Scorecard'; // Fallback as per instructions
+    }
+
+    return 'General_Scorecard'; // Default fallback if no match
+  };
 
   const availableDepartments = useMemo(() => {
     const depts = new Set<string>();
@@ -147,6 +194,10 @@ const PeoplePage: React.FC = () => {
       const { data: personCosts, error: costsError } = await supabase
         .from('mosaic_person_costs_2025')
         .select('*');
+      
+      const { data: bonusCriteriaData, error: bonusCriteriaError } = await supabase
+        .from('mosaic_bonus_criteria')
+        .select('*');
 
       if (performanceError) {
         console.error('Error fetching performance scores:', performanceError);
@@ -154,8 +205,13 @@ const PeoplePage: React.FC = () => {
       if (costsError) {
         console.error('Error fetching person costs:', costsError);
       }
+      if (bonusCriteriaError) {
+        console.error('Error fetching bonus criteria:', bonusCriteriaError);
+      }
 
-      if (performanceScores && personCosts) {
+      if (performanceScores && personCosts && bonusCriteriaData) {
+        setBonusCriteria(bonusCriteriaData);
+
         const mergedData: PersonData[] = performanceScores.map((score: PerformanceScore) => {
           const cost = personCosts.find(
             (c: PersonCost) => c.person_name === score.person_name
@@ -177,6 +233,7 @@ const PeoplePage: React.FC = () => {
             effective_bill_rate: cost.effective_bill_rate || 0,
             margin_per_hour: cost.margin_per_hour || 0,
             parsed_role_alignment_flags,
+            raw_data: score.raw_data || {}, // Ensure raw_data is always an object
           };
         });
         setPeopleData(mergedData);
@@ -184,7 +241,7 @@ const PeoplePage: React.FC = () => {
     };
 
     fetchData();
-  }, [supabase]);
+  }, [supabase, bonusCriteria]);
 
   const filteredPeople = useMemo(() => {
     let filtered = peopleData;
@@ -194,6 +251,17 @@ const PeoplePage: React.FC = () => {
     }
     if (selectedDepartment !== 'All Departments') {
       filtered = filtered.filter(person => getDepartmentDisplayName(person.department) === selectedDepartment);
+    }
+
+    // Filter by employment type
+    if (selectedEmploymentType !== 'All') {
+      if (selectedEmploymentType === 'W2 Only') {
+        filtered = filtered.filter(p => p.employment_type === 'W2 Salaried' || p.employment_type === 'W2 Hourly');
+      } else if (selectedEmploymentType === 'Contractors Only') {
+        filtered = filtered.filter(p => p.employment_type === 'Contractor');
+      } else {
+        filtered = filtered.filter(p => p.employment_type === selectedEmploymentType);
+      }
     }
 
     // Sorting logic
@@ -264,19 +332,27 @@ const PeoplePage: React.FC = () => {
     return Object.entries(bands).map(([name, count]) => ({ name, count }));
   }, [filteredPeople]);
 
-  const employmentTypeComparison = useMemo(() => {
-    const comparison: { [key: string]: { totalScore: number; count: number } } = {};
-    filteredPeople.forEach(p => {
-      if (!comparison[p.employment_type]) {
-        comparison[p.employment_type] = { totalScore: 0, count: 0 };
-      }
-      comparison[p.employment_type].totalScore += p.composite_score;
-      comparison[p.employment_type].count += 1;
-    });
-    return Object.entries(comparison).map(([type, data]) => ({
-      type,
-      avgScore: data.count > 0 ? data.totalScore / data.count : 0,
-    }));
+  const employmentTypeComparisonCard = useMemo(() => {
+    const w2People = filteredPeople.filter(p => p.employment_type === 'W2 Salaried' || p.employment_type === 'W2 Hourly');
+    const contractorPeople = filteredPeople.filter(p => p.employment_type === 'Contractor');
+
+    const w2Count = w2People.length;
+    const contractorCount = contractorPeople.length;
+
+    const w2AvgComposite = w2Count > 0 ? (w2People.reduce((sum, p) => sum + p.composite_score, 0) / w2Count) : 0;
+    const contractorAvgComposite = contractorCount > 0 ? (contractorPeople.reduce((sum, p) => sum + p.composite_score, 0) / contractorCount) : 0;
+
+    const w2AvgUtilization = w2Count > 0 ? (w2People.reduce((sum, p) => sum + (p.utilization_pct || 0), 0) / w2Count) : 0;
+    const contractorAvgUtilization = contractorCount > 0 ? (contractorPeople.reduce((sum, p) => sum + (p.utilization_pct || 0), 0) / contractorCount) : 0;
+
+    const compositeDelta = w2AvgComposite - contractorAvgComposite;
+    const utilizationDelta = w2AvgUtilization - contractorAvgUtilization;
+
+    return {
+      w2Count, w2AvgComposite, w2AvgUtilization,
+      contractorCount, contractorAvgComposite, contractorAvgUtilization,
+      compositeDelta, utilizationDelta
+    };
   }, [filteredPeople]);
 
   return (
@@ -296,6 +372,24 @@ const PeoplePage: React.FC = () => {
             ))}
           </SelectContent>
         </Select>
+
+        <div className="flex rounded-md shadow-sm" role="group">
+          {employmentTypeFilters.map(type => (
+            <Button
+              key={type}
+              variant="outline"
+              size="sm"
+              onClick={() => setSelectedEmploymentType(type)}
+              className={selectedEmploymentType === type
+                ? "bg-teal-600 text-white border-teal-500 hover:bg-teal-700"
+                : "bg-gray-800 text-gray-400 border-gray-700 hover:bg-gray-700 hover:text-white"
+              }
+            >
+              {type}
+            </Button>
+          ))}
+        </div>
+
         <Button
           variant="outline"
           size="sm"
@@ -339,9 +433,10 @@ const PeoplePage: React.FC = () => {
             <CardTitle className="text-teal-400">Workforce Mix</CardTitle>
           </CardHeader>
           <CardContent>
-            {Object.entries(workforceMix).map(([type, count]) => (
-              <p key={type}>{type}: {count}</p>
-            ))}
+            <p className="text-xl">W2: {employmentTypeComparisonCard.w2Count} (Avg Score: {employmentTypeComparisonCard.w2AvgComposite.toFixed(1)}, Avg Util: {employmentTypeComparisonCard.w2AvgUtilization.toFixed(1)}%)</p>
+            <p className="text-xl">Contractor: {employmentTypeComparisonCard.contractorCount} (Avg Score: {employmentTypeComparisonCard.contractorAvgComposite.toFixed(1)}, Avg Util: {employmentTypeComparisonCard.contractorAvgUtilization.toFixed(1)}%)</p>
+            <p className="text-xl mt-2">Score Delta: <span className={employmentTypeComparisonCard.compositeDelta >= 0 ? 'text-green-400' : 'text-red-400'}>{employmentTypeComparisonCard.compositeDelta.toFixed(1)}</span></p>
+            <p className="text-xl">Util Delta: <span className={employmentTypeComparisonCard.utilizationDelta >= 0 ? 'text-green-400' : 'text-red-400'}>{employmentTypeComparisonCard.utilizationDelta.toFixed(1)}%</span></p>
           </CardContent>
         </Card>
       </div>
@@ -368,27 +463,7 @@ const PeoplePage: React.FC = () => {
             </ResponsiveContainer>
           </CardContent>
         </Card>
-        <Card className="bg-gray-900 text-white border-gray-700">
-          <CardHeader>
-            <CardTitle className="text-teal-400">Average Score by Employment Type</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <ResponsiveContainer width="100%" height={300}>
-              <BarChart data={employmentTypeComparison} margin={{ top: 10, right: 30, left: 0, bottom: 0 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#4a5568" />
-                <XAxis dataKey="type" stroke="#cbd5e0" />
-                <YAxis stroke="#cbd5e0" />
-                <Tooltip
-                  cursor={{ fill: '#3a4150' }}
-                  contentStyle={{ backgroundColor: '#1f2937', borderColor: '#4a5568', borderRadius: '0.25rem' }}
-                  labelStyle={{ color: '#ffffff' }}
-                  itemStyle={{ color: '#e2e8f0' }}
-                />
-                <Bar dataKey="avgScore" fill="#F3CF4F" />
-              </BarChart>
-            </ResponsiveContainer>
-          </CardContent>
-        </Card>
+        {/* Removed Average Score by Employment Type chart as it's now in the comparison card */}
       </div>
 
       <Card className="bg-gray-900 text-white border-gray-700">
@@ -420,88 +495,205 @@ const PeoplePage: React.FC = () => {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {filteredPeople.map(person => (
-                <React.Fragment key={person.person_name}>
-                  <TableRow className="border-gray-700 hover:bg-gray-800">
-                    <TableCell>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => toggleRow(person.person_name)}
-                        className="text-gray-400 hover:text-white"
-                      >
-                        {expandedRows.has(person.person_name) ? <ChevronUp /> : <ChevronDown />}
-                      </Button>
-                    </TableCell>
-                    <TableCell className="font-medium text-white">
-                      <span className="flex items-center gap-2">
-                        {person.person_name}
-                        {person.active_status === 'inactive' && (
-                          <span className="inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-medium bg-gray-700 text-gray-400 border border-gray-600">Inactive</span>
-                        )}
-                        {person.active_status === 'departed' && (
-                          <span className="inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-medium bg-red-900/30 text-red-400 border border-red-800">Departed</span>
-                        )}
-                      </span>
-                    </TableCell>
-                    <TableCell className="text-gray-300">{person.role_function || person.performance_tier}</TableCell>
-                    <TableCell>
-                      <Badge className={getEmploymentTypeBadgeColor(person.employment_type)}>
-                        {person.employment_type}
-                      </Badge>
-                    </TableCell>
-                    <TableCell>
-                      <span className={`font-bold text-lg ${getScoreColor(person.composite_score)}`}>
-                        {person.composite_score.toFixed(1)}
-                      </span>
-                    </TableCell>
-                    <TableCell className="text-gray-300">{getPerformanceBand(person.composite_score)}</TableCell>
-                    <TableCell className="text-gray-300">
-                      {person.billable_hours > 0 ? `${(person.utilization_pct || 0).toFixed(1)}%` : 'N/A'}
-                    </TableCell>
-                    <TableCell className="text-gray-300">{person.supervisor}</TableCell>
-                  </TableRow>
-                  {expandedRows.has(person.person_name) && (
-                    <TableRow className="bg-gray-800 border-gray-700">
-                      <TableCell colSpan={8} className="py-4 px-6 text-gray-200">
-                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                          <div>
-                            <h4 className="font-semibold text-teal-300 mb-2">Score Breakdown</h4>
-                            <p>Utilization Score: {person.utilization_pct?.toFixed(1) || 'N/A'}</p>
-                            <p>Efficiency Score: {person.efficiency_score?.toFixed(1) || 'N/A'}</p>
-                            <p>Collaboration Score: {person.collaboration_score?.toFixed(1) || 'N/A'}</p>
-                            <p>Compliance Score: {person.compliance_score?.toFixed(1) || 'N/A'}</p>
-                            <p>Revenue Impact Score: {person.revenue_impact_score?.toFixed(1) || 'N/A'}</p>
-                            <p>Non-Billable Quality Score: {person.non_billable_quality_score?.toFixed(1) || 'N/A'}</p>
-                          </div>
-                          <div>
-                            <h4 className="font-semibold text-teal-300 mb-2">Qualitative Assessment</h4>
-                            <p><span className="font-medium">Strengths:</span> {person.strengths || 'N/A'}</p>
-                            <p><span className="font-medium">Concerns:</span> {person.concerns || 'N/A'}</p>
-                            <p><span className="font-medium">Specific Actions:</span> {person.specific_actions || 'N/A'}</p>
-                          </div>
-                          <div>
-                            <h4 className="font-semibold text-teal-300 mb-2">Cost Data</h4>
-                            <p>Annual Cost: ${person.annual_cost?.toLocaleString() || 'N/A'}</p>
-                            <p>Effective Bill Rate: ${person.effective_bill_rate?.toFixed(2) || 'N/A'}</p>
-                            <p>Margin Per Hour: ${person.margin_per_hour?.toFixed(2) || 'N/A'}</p>
-                            <h4 className="font-semibold text-teal-300 mt-4 mb-2">Role Alignment Flags</h4>
-                            {person.parsed_role_alignment_flags && Object.keys(person.parsed_role_alignment_flags).length > 0 ? (
-                              <ul>
-                                {Object.entries(person.parsed_role_alignment_flags).map(([key, value]) => (
-                                  <li key={key}>{key}: {JSON.stringify(value)}</li>
-                                ))}
-                              </ul>
-                            ) : (
-                              <p>No role alignment flags.</p>
+              {filteredPeople.map(person => {
+                const roleTemplate = getRoleScorecardTemplate(person.role_function, person.utilization_pct || 0, person.employment_type);
+                const roleSpecificKPIs = bonusCriteria.filter(c => c.role_title === roleTemplate);
+                
+                const getWeightColor = (weight: number): string => {
+                  if (weight >= 50) return 'bg-red-700';
+                  if (weight >= 30) return 'bg-orange-600';
+                  if (weight >= 15) return 'bg-yellow-500';
+                  return 'bg-green-600';
+                };
+
+                const renderRawDataMetric = (key: string, label: string, isCurrency: boolean = false) => {
+                  if (person.raw_data && person.raw_data[key] !== undefined) {
+                    const value = person.raw_data[key];
+                    return <p>{label}: <span className="font-medium text-white">{isCurrency ? `$${value.toLocaleString()}` : value.toLocaleString()}</span></p>;
+                  }
+                  return null;
+                };
+
+                return (
+                  <React.Fragment key={person.person_name}>
+                    <TableRow className="border-gray-700 hover:bg-gray-800">
+                      <TableCell>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => toggleRow(person.person_name)}
+                          className="text-gray-400 hover:text-white"
+                        >
+                          {expandedRows.has(person.person_name) ? <ChevronUp /> : <ChevronDown />}
+                        </Button>
+                      </TableCell>
+                      <TableCell className="font-medium text-white">
+                        <span className="flex items-center gap-2">
+                          {person.person_name}
+                          {person.active_status === 'inactive' && (
+                            <span className="inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-medium bg-gray-700 text-gray-400 border border-gray-600">Inactive</span>
+                          )}
+                          {person.active_status === 'departed' && (
+                            <span className="inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-medium bg-red-900/30 text-red-400 border border-red-800">Departed</span>
+                          )}
+                        </span>
+                      </TableCell>
+                      <TableCell className="text-gray-300">{person.role_function || person.performance_tier}</TableCell>
+                      <TableCell>
+                        <Badge className={getEmploymentTypeBadgeColor(person.employment_type)}>
+                          {person.employment_type}
+                        </Badge>
+                      </TableCell>
+                      <TableCell>
+                        <span className={`font-bold text-lg ${getScoreColor(person.composite_score)}`}>
+                          {person.composite_score.toFixed(1)}
+                        </span>
+                      </TableCell>
+                      <TableCell className="text-gray-300">{getPerformanceBand(person.composite_score)}</TableCell>
+                      <TableCell className="text-gray-300">
+                        {person.billable_hours > 0 ? `${(person.utilization_pct || 0).toFixed(1)}%` : 'N/A'}
+                      </TableCell>
+                      <TableCell className="text-gray-300">{person.supervisor}</TableCell>
+                    </TableRow>
+                    {expandedRows.has(person.person_name) && (
+                      <TableRow className="bg-gray-800 border-gray-700">
+                        <TableCell colSpan={8} className="py-4 px-6 text-gray-200">
+                          <div className="space-y-6">
+                            {/* Composite Score Gauge */}
+                            <div>
+                              <h4 className="font-semibold text-teal-300 mb-2">Composite Score: <span className={getScoreColor(person.composite_score)}>{person.composite_score.toFixed(1)}</span> - {getPerformanceBand(person.composite_score)}</h4>
+                              <div className="w-full bg-gray-700 rounded-full h-4 relative overflow-hidden">
+                                <div
+                                  className={`h-4 rounded-full absolute top-0 left-0`}
+                                  style={{
+                                    width: `${person.composite_score}%`,
+                                    backgroundColor: person.composite_score >= 85 ? '#64C4DD' : person.composite_score >= 75 ? '#22C55E' : person.composite_score >= 60 ? '#F3CF4F' : '#DC2626',
+                                  }}
+                                ></div>
+                              </div>
+                            </div>
+
+                            {/* Score Breakdown Radar Chart */}
+                            <div>
+                              <h4 className="font-semibold text-teal-300 mb-2">Score Breakdown</h4>
+                              <ResponsiveContainer width="100%" height={300}>
+                                <RadarChart outerRadius={90} width={730} height={250} data={[
+                                  {  subject: 'Utilization', A: person.utilization_pct || 0, fullMark: 100 },
+                                  {  subject: 'Efficiency', A: person.efficiency_score || 0, fullMark: 100 },
+                                  {  subject: 'Collaboration', A: person.collaboration_score || 0, fullMark: 100 },
+                                  {  subject: 'Compliance', A: person.compliance_score || 0, fullMark: 100 },
+                                  {  subject: 'Revenue Impact', A: person.revenue_impact_score || 0, fullMark: 100 },
+                                  {  subject: 'Non-Billable Quality', A: person.non_billable_quality_score || 0, fullMark: 100 },
+                                ]}>
+                                  <PolarGrid stroke="#4a5568" />
+                                  <PolarAngleAxis dataKey="subject" stroke="#cbd5e0" />
+                                  <PolarRadiusAxis angle={30} domain={[0, 100]} stroke="#cbd5e0" />
+                                  <Radar name={person.person_name} dataKey="A" stroke="#64C4DD" fill="#64C4DD" fillOpacity={0.6} />
+                                  <Tooltip
+                                    cursor={{ fill: '#3a4150' }}
+                                    contentStyle={{ backgroundColor: '#1f2937', borderColor: '#4a5568', borderRadius: '0.25rem' }}
+                                    labelStyle={{ color: '#ffffff' }}
+                                    itemStyle={{ color: '#e2e8f0' }}
+                                  />
+                                </RadarChart>
+                              </ResponsiveContainer>
+                            </div>
+
+                            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                              <div>
+                                <h4 className="font-semibold text-teal-300 mb-2">Qualitative Assessment</h4>
+                                <p className="mb-1"><span className="font-medium text-green-400">Strengths:</span> {person.strengths || 'N/A'}</p>
+                                <p className="mb-1"><span className="font-medium text-red-400">Concerns:</span> {person.concerns || 'N/A'}</p>
+                                <p className="mb-1"><span className="font-medium text-amber-400">Specific Actions:</span> {person.specific_actions || 'N/A'}</p>
+                              </div>
+                              <div>
+                                <h4 className="font-semibold text-teal-300 mb-2">Cost & Hours Data</h4>
+                                <p>Annual Cost: <span className="font-medium text-white">${person.annual_cost?.toLocaleString() || 'N/A'}</span></p>
+                                <p>Effective Bill Rate: <span className="font-medium text-white">${person.effective_bill_rate?.toFixed(2) || 'N/A'}</span></p>
+                                <p>Margin Per Hour: <span className="font-medium text-white">${person.margin_per_hour?.toFixed(2) || 'N/A'}</span></p>
+                                <p className="mt-2">Billable Hours: <span className="font-medium text-white">{person.billable_hours?.toFixed(1) || 'N/A'}</span></p>
+                                <p>Total Hours: <span className="font-medium text-white">{person.total_hours?.toFixed(1) || 'N/A'}</span></p>
+                                <p className="mb-1">Utilization: <span className="font-medium text-white">{(person.utilization_pct || 0).toFixed(1)}%</span></p>
+                                <div className="w-full bg-gray-700 rounded-full h-3 relative overflow-hidden">
+                                  <div
+                                    className="h-3 rounded-full bg-teal-500 absolute top-0 left-0"
+                                    style={{ width: `${person.utilization_pct || 0}%` }}
+                                  ></div>
+                                </div>
+                              </div>
+                              <div>
+                                <h4 className="font-semibold text-teal-300 mb-2">Organization & Role Alignment</h4>
+                                <p className="mb-2"><span className="font-medium">Supervisor:</span> {person.supervisor || 'N/A'}</p>
+                                <h4 className="font-semibold text-teal-300 mt-4 mb-2">Role Alignment Flags</h4>
+                                {person.parsed_role_alignment_flags && Object.keys(person.parsed_role_alignment_flags).length > 0 ? (
+                                  <div className="flex flex-wrap gap-2">
+                                    {Object.entries(person.parsed_role_alignment_flags).map(([key, value]) => (
+                                      <Badge key={key} variant="secondary" className="bg-blue-600 text-white">
+                                        {key}: {String(value)}
+                                      </Badge>
+                                    ))}
+                                  </div>
+                                ) : (
+                                  <p>No role alignment flags.</p>
+                                )}
+                              </div>
+                            </div>
+
+                            {/* Role-Specific KPIs */}
+                            {roleSpecificKPIs.length > 0 && (
+                              <div>
+                                <h4 className="font-semibold text-teal-300 mt-6 mb-3">Role-Specific KPIs (<span className="text-white">{roleTemplate}</span>)</h4>
+                                <div className="space-y-3">
+                                  {roleSpecificKPIs.map(kpi => (
+                                    <div key={kpi.criterion_name} className="bg-gray-700 p-3 rounded-md border border-gray-600">
+                                      <p className="font-medium text-lg text-white mb-1">{kpi.criterion_name} <span className="text-sm text-gray-400">({kpi.data_source})</span></p>
+                                      <div className="flex items-center gap-2 mb-1">
+                                        <div className="w-24 text-sm text-gray-300">Weight:</div>
+                                        <div className="w-full bg-gray-600 rounded-full h-2 relative overflow-hidden">
+                                          <div
+                                            className={`h-2 rounded-full absolute top-0 left-0 ${getWeightColor(kpi.weight_pct)}`}
+                                            style={{ width: `${kpi.weight_pct}%` }}
+                                          ></div>
+                                        </div>
+                                        <span className="text-sm text-white">{kpi.weight_pct}%</span>
+                                      </div>
+                                      <p className="text-sm text-gray-300 mb-1">Threshold: <span className="font-medium text-white">{kpi.threshold_min}</span> | Target: <span className="font-medium text-white">{kpi.target_value}</span> | Stretch: <span className="font-medium text-white">{kpi.stretch_value}</span></p>
+                                      {kpi.scoring_notes && <p className="text-xs text-gray-400">Notes: {kpi.scoring_notes}</p>}
+                                    </div>
+                                  ))}
+                                </div>
+
+                                {/* Raw Data Metrics for Role */}
+                                {(person.raw_data && Object.keys(person.raw_data).length > 0) && (
+                                  <div className="mt-6">
+                                    <h4 className="font-semibold text-teal-300 mb-3">Actual Role Metrics from Raw Data</h4>
+                                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                                      {renderRawDataMetric('deals_closed', 'Deals Closed')}
+                                      {renderRawDataMetric('deals_won_value', 'Deals Won Value', true)}
+                                      {renderRawDataMetric('pipeline_value', 'Pipeline Value', true)}
+                                      {renderRawDataMetric('win_rate', 'Win Rate')}
+                                      {/* Add other relevant raw_data metrics as needed based on role */}
+                                      {Object.entries(person.raw_data)
+                                        .filter(([key]) => !['deals_closed', 'deals_won_value', 'pipeline_value', 'win_rate'].includes(key)) // Avoid duplicating known sales metrics
+                                        .map(([key, value]) => {
+                                          if (typeof value === 'number') {
+                                            return renderRawDataMetric(key, key.replace(/_/g, ' ').split(' ').map(word => word.charAt(0).toUpperCase() + word.slice(1)).join(' '));
+                                          }
+                                          return null;
+                                        })
+                                      }
+                                    </div>
+                                  </div>
+                                )}
+                              </div>
                             )}
                           </div>
-                        </div>
-                      </TableCell>
-                    </TableRow>
-                  )}
-                </React.Fragment>
-              ))}
+                        </TableCell>
+                      </TableRow>
+                    )}
+                  </React.Fragment>
+                );
+              })}
             </TableBody>
           </Table>
         </CardContent>
