@@ -54,15 +54,16 @@ interface PersonCost {
   margin_per_hour: number;
 }
 
-interface BonusCriterion {
+interface RoleKpi {
+  person_name: string;
+  role_category: string;
   role_title: string;
-  criterion_name: string;
-  weight_pct: number;
-  data_source: string;
-  threshold_min: number;
-  target_value: number;
-  stretch_value: number;
-  scoring_notes: string;
+  kpi_number: number;
+  kpi_name: string;
+  kpi_description: string;
+  measurement_source: string;
+  target_value: string;
+  weight_pct: number | null;
 }
 
 interface PersonData extends PerformanceScore, PersonCost {
@@ -138,7 +139,7 @@ const getEmploymentTypeBadgeColor = (type: string): string => {
 
 const PeoplePage: React.FC = () => {
   const [peopleData, setPeopleData] = useState<PersonData[]>([]);
-  const [bonusCriteria, setBonusCriteria] = useState<BonusCriterion[]>([]);
+  const [roleKpis, setRoleKpis] = useState<RoleKpi[]>([]);
   const [selectedDepartment, setSelectedDepartment] = useState<string>('All Departments');
   const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set());
   const [showRawMetrics, setShowRawMetrics] = useState<boolean>(false);
@@ -243,8 +244,8 @@ const PeoplePage: React.FC = () => {
         .from('mosaic_person_costs_2025')
         .select('*');
       
-      const { data: bonusCriteriaData, error: bonusCriteriaError } = await supabase
-        .from('mosaic_bonus_criteria')
+      const { data: roleKpisData, error: roleKpisError } = await supabase
+        .from('mosaic_role_kpis_2025')
         .select('*');
 
       if (performanceError) {
@@ -253,12 +254,12 @@ const PeoplePage: React.FC = () => {
       if (costsError) {
         console.error('Error fetching person costs:', costsError);
       }
-      if (bonusCriteriaError) {
-        console.error('Error fetching bonus criteria:', bonusCriteriaError);
+      if (roleKpisError) {
+        console.error('Error fetching role KPIs:', roleKpisError);
       }
 
-      if (performanceScores && personCosts && bonusCriteriaData) {
-        setBonusCriteria(bonusCriteriaData);
+      if (performanceScores && personCosts) {
+        if (roleKpisData) setRoleKpis(roleKpisData);
 
         const mergedData: PersonData[] = performanceScores.map((score: PerformanceScore) => {
           const cost = personCosts.find(
@@ -289,7 +290,7 @@ const PeoplePage: React.FC = () => {
     };
 
     fetchData();
-  }, [supabase, bonusCriteria]);
+  }, [supabase]);
 
   const filteredPeople = useMemo(() => {
     let filtered = peopleData;
@@ -545,48 +546,8 @@ const PeoplePage: React.FC = () => {
             <TableBody>
               {filteredPeople.map(person => {
                 const roleTemplate = getRoleScorecardTemplate(person.role_function, person.utilization_pct || 0, person.employment_type);
-                const roleSpecificKPIs = bonusCriteria.filter(c => c.role_title === roleTemplate);
-                
-                const getWeightColor = (weight: number): string => {
-                  if (weight >= 50) return 'bg-[#64C4DD]'; // Teal for high
-                  if (weight >= 30) return 'bg-[#10193C]'; // Navy for medium
-                  return 'bg-gray-500'; // Grey for low
-                };
-
-                const getMappedScore = (criterionName: string, person: PersonData): number | null => {
-                  const lowerCriterion = criterionName.toLowerCase();
-                  if ((lowerCriterion.includes('utilization') || lowerCriterion.includes('personal util')) && person.utilization_pct > 0) {
-                    return person.utilization_pct;
-                  }
-                  if ((lowerCriterion.includes('delivery quality') || lowerCriterion.includes('quality')) && person.compliance_score !== 0) {
-                    return person.compliance_score;
-                  }
-                  if ((lowerCriterion.includes('note quality') || lowerCriterion.includes('nbq')) && person.non_billable_quality_score !== 0) {
-                    return person.non_billable_quality_score;
-                  }
-                  if (lowerCriterion.includes('collaboration') && person.collaboration_score !== 0) {
-                    return person.collaboration_score;
-                  }
-                  // Check if the role is NOT support/marketing/IT before mapping revenue impact
-                  const nonRevenueRoles = ['support_corporate', 'contentmarketing_nonbillable', 'engagementcomms_nonbillable', 'itadmin_nonbillable', 'devops_nonbillable', 'finance', 'hr', 'it', 'operations', 'recruiting', 'compensation', 'contracts', 'legal'];
-                  const lowerRoleTemplate = roleTemplate.toLowerCase();
-
-                  if (
-                    (lowerCriterion.includes('revenue') || lowerCriterion.includes('deal value')) &&
-                    person.revenue_impact_score !== 0 &&
-                    !nonRevenueRoles.some(role => lowerRoleTemplate.includes(role))
-                  ) {
-                    return person.revenue_impact_score;
-                  }
-                  if ((lowerCriterion.includes('efficiency') || lowerCriterion.includes('cost efficiency')) && person.efficiency_score !== 0) {
-                    return person.efficiency_score;
-                  }
-                  // Check raw_data for direct matches
-                  if (person.raw_data && typeof person.raw_data[criterionName.toLowerCase().replace(/ /g, '_')] === 'number') {
-                    return person.raw_data[criterionName.toLowerCase().replace(/ /g, '_')];
-                  }
-                  return null;
-                };
+                const personKpis = roleKpis.filter(k => k.person_name === person.person_name).sort((a, b) => a.kpi_number - b.kpi_number);
+                const personRoleCategory = personKpis.length > 0 ? personKpis[0].role_category : null;
 
                 const renderRawDataMetric = (key: string, label: string, isCurrency: boolean = false) => {
                   if (person.raw_data && person.raw_data[key] !== undefined) {
@@ -655,54 +616,39 @@ const PeoplePage: React.FC = () => {
                               </div>
                             </div>
 
-                                                        {/* Placeholder for new KPI section and conditional Radar Chart */}
-                            {/* Section 1: Role & Template Header */}
+                                                        {/* Section 1: Role & Category Header */}
                             <div className="flex items-center gap-3 mb-6">
-                              <Badge className="bg-blue-600 text-white text-base py-1 px-3">
-                                {roleTemplate}
-                              </Badge>
+                              {personRoleCategory && (
+                                <Badge className="bg-purple-600 text-white text-base py-1 px-3">
+                                  {personRoleCategory}
+                                </Badge>
+                              )}
                               <h3 className="text-2xl font-bold text-white">{person.role_function}</h3>
                             </div>
 
-                            {/* Section 2: Role-Specific KPI Cards */}
-                            {roleSpecificKPIs.length > 0 && (
+                            {/* Section 2: Role-Specific KPIs (from mosaic_role_kpis_2025) */}
+                            {personKpis.length > 0 && (
                               <div className="mt-6">
                                 <h4 className="font-semibold text-teal-300 mb-3">Role-Specific KPIs</h4>
-                                <div className="space-y-4">
-                                  {roleSpecificKPIs.map(kpi => {
-                                    const mappedScore = getMappedScore(kpi.criterion_name, person);
-                                    const scoreDisplay = mappedScore !== null ? mappedScore.toFixed(1) : 'Not yet measured';
-                                    const scoreColor = mappedScore !== null ? getScoreColor(mappedScore) : 'text-gray-400';
-                                    return (
-                                      <Card key={kpi.criterion_name} className="bg-gray-700 border-gray-600 text-white">
-                                        <CardContent className="p-4">
-                                          <p className="font-bold text-lg mb-1">{kpi.criterion_name}</p>
-                                          <div className="flex items-center gap-2 mb-2">
-                                            <span className="text-sm text-gray-300 w-16">Weight:</span>
-                                            <div className="flex-1 bg-gray-600 rounded-full h-2 relative overflow-hidden">
-                                              <div
-                                                className={`h-2 rounded-full absolute top-0 left-0 ${getWeightColor(kpi.weight_pct)}`}
-                                                style={{ width: `${kpi.weight_pct}%` }}
-                                              ></div>
-                                            </div>
-                                            <span className="text-sm text-white">{kpi.weight_pct}%</span>
-                                          </div>
-                                          <p className="text-sm text-gray-300 mb-2">
-                                            <span className="text-red-400">Threshold: {kpi.threshold_min}</span> | 
-                                            <span className="text-amber-400"> Target: {kpi.target_value}</span> | 
-                                            <span className="text-green-400"> Stretch: {kpi.stretch_value}</span>
-                                          </p>
-                                          <p className="text-sm text-gray-400 mb-2">Score: <span className={`${scoreColor} font-bold`}>{scoreDisplay}</span></p>
-                                          {kpi.scoring_notes && (
-                                            <p className="text-xs text-gray-400 mb-2">
-                                              Notes: {kpi.scoring_notes}
-                                            </p>
+                                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                                  {personKpis.map(kpi => (
+                                    <Card key={kpi.kpi_number} className="bg-gray-700 border-gray-600 text-white">
+                                      <CardContent className="p-4">
+                                        <div className="flex items-center gap-2 mb-2">
+                                          <span className="text-xs font-mono text-gray-400">KPI {kpi.kpi_number}</span>
+                                          {kpi.weight_pct != null && (
+                                            <Badge className="bg-teal-600 text-white text-xs">{kpi.weight_pct}%</Badge>
                                           )}
-                                          <p className="text-xs text-gray-500">Source: {kpi.data_source}</p>
-                                        </CardContent>
-                                      </Card>
-                                    );
-                                  })}
+                                        </div>
+                                        <p className="font-bold text-lg mb-1 text-white">{kpi.kpi_name}</p>
+                                        <p className="text-sm text-gray-300 mb-3">{kpi.kpi_description}</p>
+                                        <div className="space-y-1 text-sm">
+                                          <p className="text-amber-400">Target: {kpi.target_value}</p>
+                                          <p className="text-gray-400">Source: {kpi.measurement_source}</p>
+                                        </div>
+                                      </CardContent>
+                                    </Card>
+                                  ))}
                                 </div>
                               </div>
                             )}

@@ -16,6 +16,7 @@ const navItems = [
   { href: '/okrs', label: 'OKRs', icon: '◎' },
   { href: '/check-in', label: 'Check-in', icon: '◇' },
   { href: '/kpis', label: 'KPIs', icon: '◆' },
+  { href: '/role-kpis', label: 'Role KPIs', icon: '◈' },
   { href: '/history', label: 'History', icon: '◆' },
 ]
 
