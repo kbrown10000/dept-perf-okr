@@ -141,6 +141,7 @@ const PeoplePage: React.FC = () => {
   const [peopleData, setPeopleData] = useState<PersonData[]>([]);
   const [roleKpis, setRoleKpis] = useState<RoleKpi[]>([]);
   const [selectedDepartment, setSelectedDepartment] = useState<string>('All Departments');
+  const [selectedRoleCategory, setSelectedRoleCategory] = useState<string>('All Clusters');
   const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set());
   const [showRawMetrics, setShowRawMetrics] = useState<boolean>(false);
   const [sortBy, setSortBy] = useState<keyof PersonData>('person_name');
@@ -150,6 +151,52 @@ const PeoplePage: React.FC = () => {
   const supabase = createClient();
 
   const employmentTypeFilters = ['All', 'W2 Only', 'Contractors Only', 'W2 Salaried', 'W2 Hourly', 'Contractor'];
+
+  // Build lookup: person_name → role_category from KPI data
+  const personRoleCategoryMap = useMemo(() => {
+    const map: Record<string, string> = {};
+    roleKpis.forEach(k => {
+      if (!map[k.person_name]) map[k.person_name] = k.role_category;
+    });
+    return map;
+  }, [roleKpis]);
+
+  // Canonical cluster display order
+  const clusterDisplayOrder = [
+    'All Clusters',
+    'Billable Delivery IC',
+    'Project/Program Manager',
+    'Solutions/Practice Leader',
+    'LTE (Staff Augmentation)',
+    'Delivery People Leader',
+    'Executive',
+    'Recruiting',
+    'Client Engagement Manager',
+    'Unique Role',
+    'Support/Finance',
+    'Support/HR',
+    'Support/IT',
+    'Support/Marketing',
+    'Support/Operations',
+    'Unassigned',
+  ];
+
+  const availableRoleCategories = useMemo(() => {
+    const cats = new Set<string>();
+    // Add categories for people with KPIs
+    Object.values(personRoleCategoryMap).forEach(c => cats.add(c));
+    // Add 'Unassigned' if any active people lack KPIs
+    const activeNames = new Set(
+      peopleData.filter(p => p.active_status === 'active' || !p.active_status).map(p => p.person_name)
+    );
+    const hasUnassigned = [...activeNames].some(name => !personRoleCategoryMap[name]);
+    if (hasUnassigned) cats.add('Unassigned');
+    // Sort by canonical order
+    const ordered = clusterDisplayOrder.filter(c => c === 'All Clusters' || cats.has(c));
+    // Add any categories not in canonical order
+    cats.forEach(c => { if (!ordered.includes(c)) ordered.push(c); });
+    return ordered;
+  }, [personRoleCategoryMap, peopleData]);
 
   const getRoleScorecardTemplate = (roleFunction: string, utilization_pct: number, employment_type: string): string => {
     const lowerRole = roleFunction.toLowerCase();
@@ -302,6 +349,15 @@ const PeoplePage: React.FC = () => {
       filtered = filtered.filter(person => getDepartmentDisplayName(person.department) === selectedDepartment);
     }
 
+    // Filter by role category/cluster
+    if (selectedRoleCategory !== 'All Clusters') {
+      if (selectedRoleCategory === 'Unassigned') {
+        filtered = filtered.filter(p => !personRoleCategoryMap[p.person_name]);
+      } else {
+        filtered = filtered.filter(p => personRoleCategoryMap[p.person_name] === selectedRoleCategory);
+      }
+    }
+
     // Filter by employment type
     if (selectedEmploymentType !== 'All') {
       if (selectedEmploymentType === 'W2 Only') {
@@ -422,6 +478,19 @@ const PeoplePage: React.FC = () => {
           </SelectContent>
         </Select>
 
+        <Select onValueChange={(value: string | null) => { if (value) setSelectedRoleCategory(value) }} defaultValue={selectedRoleCategory}>
+          <SelectTrigger className="w-[280px] bg-gray-800 text-white border-gray-700">
+            <SelectValue>{selectedRoleCategory}</SelectValue>
+          </SelectTrigger>
+          <SelectContent className="bg-gray-800 text-white border-gray-700">
+            {availableRoleCategories.map(cat => (
+              <SelectItem key={cat} value={cat}>
+                {cat}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+
         <div className="flex rounded-md shadow-sm" role="group">
           {employmentTypeFilters.map(type => (
             <Button
@@ -490,6 +559,57 @@ const PeoplePage: React.FC = () => {
         </Card>
       </div>
 
+      {/* Cluster Distribution */}
+      {(() => {
+        const clusterCounts: Record<string, { count: number; avgScore: number; totalScore: number }> = {};
+        const activePeople = peopleData.filter(p => p.active_status === 'active' || !p.active_status);
+        activePeople.forEach(p => {
+          const cat = personRoleCategoryMap[p.person_name] || 'Unassigned';
+          if (!clusterCounts[cat]) clusterCounts[cat] = { count: 0, avgScore: 0, totalScore: 0 };
+          clusterCounts[cat].count++;
+          clusterCounts[cat].totalScore += p.composite_score;
+        });
+        Object.values(clusterCounts).forEach(v => { v.avgScore = v.count > 0 ? v.totalScore / v.count : 0; });
+        const clusterData = clusterDisplayOrder
+          .filter(c => c !== 'All Clusters' && clusterCounts[c])
+          .map(c => ({ name: c, count: clusterCounts[c].count, avgScore: clusterCounts[c].avgScore }));
+        // Add any not in canonical order
+        Object.keys(clusterCounts).forEach(c => {
+          if (!clusterData.find(d => d.name === c)) {
+            clusterData.push({ name: c, count: clusterCounts[c].count, avgScore: clusterCounts[c].avgScore });
+          }
+        });
+
+        return (
+          <Card className="bg-gray-900 text-white border-gray-700 mb-8">
+            <CardHeader>
+              <CardTitle className="text-teal-400">Role Cluster Distribution</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-3">
+                {clusterData.map(c => (
+                  <button
+                    key={c.name}
+                    onClick={() => setSelectedRoleCategory(selectedRoleCategory === c.name ? 'All Clusters' : c.name)}
+                    className={`p-3 rounded-lg border text-left transition-colors ${
+                      selectedRoleCategory === c.name
+                        ? 'bg-teal-900/50 border-teal-500'
+                        : 'bg-gray-800 border-gray-700 hover:border-gray-500'
+                    }`}
+                  >
+                    <p className="text-sm text-gray-400 truncate">{c.name}</p>
+                    <p className="text-2xl font-bold text-white">{c.count}</p>
+                    <p className="text-sm">
+                      Avg: <span className={getScoreColor(c.avgScore)}>{c.avgScore.toFixed(1)}</span>
+                    </p>
+                  </button>
+                ))}
+              </div>
+            </CardContent>
+          </Card>
+        );
+      })()}
+
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
         <Card className="bg-gray-900 text-white border-gray-700">
           <CardHeader>
@@ -530,6 +650,7 @@ const PeoplePage: React.FC = () => {
                 <TableHead className="text-white cursor-pointer" onClick={() => handleSort('role_function')}>
                   Role {sortBy === 'role_function' && (sortOrder === 'asc' ? '▲' : '▼')}
                 </TableHead>
+                <TableHead className="text-white">Cluster</TableHead>
                 <TableHead className="text-white">Employment Type</TableHead>
                 <TableHead className="text-white cursor-pointer" onClick={() => handleSort('composite_score')}>
                   Composite Score {sortBy === 'composite_score' && (sortOrder === 'asc' ? '▲' : '▼')}
@@ -583,6 +704,15 @@ const PeoplePage: React.FC = () => {
                       </TableCell>
                       <TableCell className="text-gray-300">{person.role_function || person.performance_tier}</TableCell>
                       <TableCell>
+                        {personRoleCategory ? (
+                          <Badge className="bg-purple-600/80 text-white text-xs">
+                            {personRoleCategory}
+                          </Badge>
+                        ) : (
+                          <span className="text-gray-500 text-xs">—</span>
+                        )}
+                      </TableCell>
+                      <TableCell>
                         <Badge className={getEmploymentTypeBadgeColor(person.employment_type)}>
                           {person.employment_type}
                         </Badge>
@@ -600,7 +730,7 @@ const PeoplePage: React.FC = () => {
                     </TableRow>
                     {expandedRows.has(person.person_name) && (
                       <TableRow className="bg-gray-800 border-gray-700">
-                        <TableCell colSpan={8} className="py-4 px-6 text-gray-200">
+                        <TableCell colSpan={9} className="py-4 px-6 text-gray-200">
                           <div className="space-y-6">
                             {/* Composite Score Gauge */}
                             <div>
@@ -623,10 +753,21 @@ const PeoplePage: React.FC = () => {
                                   {personRoleCategory}
                                 </Badge>
                               )}
-                              <h3 className="text-2xl font-bold text-white">{person.role_function}</h3>
+                              <div>
+                                <h3 className="text-2xl font-bold text-white">{person.role_function}</h3>
+                                {personKpis.length > 0 && personKpis[0].role_title && personKpis[0].role_title !== person.role_function && (
+                                  <p className="text-sm text-gray-400 mt-1">KPI Title: {personKpis[0].role_title}</p>
+                                )}
+                              </div>
                             </div>
 
                             {/* Section 2: Role-Specific KPIs (from mosaic_role_kpis_2025) */}
+                            {personKpis.length === 0 && (person.active_status === 'active' || !person.active_status) && (person.employment_type === 'W2 Salaried' || person.employment_type === 'W2 Hourly') && (
+                              <div className="mt-4 p-3 rounded-lg bg-amber-900/30 border border-amber-700">
+                                <p className="text-amber-400 text-sm font-medium">⚠️ No role-specific KPIs assigned yet</p>
+                                <p className="text-gray-400 text-xs mt-1">This W2 employee needs cluster assignment and tailored KPIs.</p>
+                              </div>
+                            )}
                             {personKpis.length > 0 && (
                               <div className="mt-6">
                                 <h4 className="font-semibold text-teal-300 mb-3">Role-Specific KPIs</h4>
