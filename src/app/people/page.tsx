@@ -142,30 +142,13 @@ const getEmploymentTypeBadgeColor = (type: string): string => {
   }
 };
 
-const clusterDisplayOrder = [
-  'All Clusters',
-  'Billable Delivery IC',
-  'Project/Program Manager',
-  'Solutions/Practice Leader',
-  'LTE (Staff Augmentation)',
-  'Delivery People Leader',
-  'Executive',
-  'Recruiting',
-  'Client Engagement Manager',
-  'Unique Role',
-  'Support/Finance',
-  'Support/HR',
-  'Support/IT',
-  'Support/Marketing',
-  'Support/Operations',
-  'Unassigned',
-];
+
 
 const PeoplePage: React.FC = () => {
   const [peopleData, setPeopleData] = useState<PersonData[]>([]);
   const [roleKpis, setRoleKpis] = useState<RoleKpi[]>([]);
   const [selectedDepartment, setSelectedDepartment] = useState<string>('All Departments');
-  const [selectedRoleCategory, setSelectedRoleCategory] = useState<string>('All Clusters');
+
   const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set());
   const [sortBy, setSortBy] = useState<keyof PersonData>('person_name');
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('asc');
@@ -185,18 +168,7 @@ const PeoplePage: React.FC = () => {
     return map;
   }, [roleKpis]);
 
-  const availableRoleCategories = useMemo(() => {
-    const cats = new Set<string>();
-    Object.values(personRoleCategoryMap).forEach(c => cats.add(c));
-    const activeNames = new Set(
-      peopleData.filter(p => p.active_status === 'active' || !p.active_status).map(p => p.person_name)
-    );
-    const hasUnassigned = [...activeNames].some(name => !personRoleCategoryMap[name]);
-    if (hasUnassigned) cats.add('Unassigned');
-    const ordered = clusterDisplayOrder.filter(c => c === 'All Clusters' || cats.has(c));
-    cats.forEach(c => { if (!ordered.includes(c)) ordered.push(c); });
-    return ordered;
-  }, [personRoleCategoryMap, peopleData]);
+
 
   const availableDepartments = useMemo(() => {
     const depts = new Set<string>();
@@ -262,13 +234,6 @@ const PeoplePage: React.FC = () => {
     if (selectedDepartment !== 'All Departments') {
       filtered = filtered.filter(person => getDepartmentDisplayName(person.department) === selectedDepartment);
     }
-    if (selectedRoleCategory !== 'All Clusters') {
-      if (selectedRoleCategory === 'Unassigned') {
-        filtered = filtered.filter(p => !personRoleCategoryMap[p.person_name]);
-      } else {
-        filtered = filtered.filter(p => personRoleCategoryMap[p.person_name] === selectedRoleCategory);
-      }
-    }
     if (selectedEmploymentType !== 'All') {
       if (selectedEmploymentType === 'W2 Only') {
         filtered = filtered.filter(p => p.employment_type === 'W2 Salaried' || p.employment_type === 'W2 Hourly');
@@ -289,7 +254,7 @@ const PeoplePage: React.FC = () => {
       }
       return 0;
     });
-  }, [peopleData, selectedDepartment, selectedRoleCategory, selectedEmploymentType, sortBy, sortOrder, showInactive, personRoleCategoryMap]);
+  }, [peopleData, selectedDepartment, selectedEmploymentType, sortBy, sortOrder, showInactive]);
 
   const handleSort = (column: keyof PersonData) => {
     if (sortBy === column) {
@@ -381,17 +346,6 @@ const PeoplePage: React.FC = () => {
           </SelectContent>
         </Select>
 
-        <Select onValueChange={(value: string | null) => { if (value) setSelectedRoleCategory(value) }} defaultValue={selectedRoleCategory}>
-          <SelectTrigger className="w-[260px] bg-gray-800 text-white border-gray-700">
-            <SelectValue>{selectedRoleCategory}</SelectValue>
-          </SelectTrigger>
-          <SelectContent className="bg-gray-800 text-white border-gray-700">
-            {availableRoleCategories.map(cat => (
-              <SelectItem key={cat} value={cat}>{cat}</SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-
         <div className="flex rounded-md shadow-sm" role="group">
           {employmentTypeFilters.map(type => (
             <Button key={type} variant="outline" size="sm"
@@ -436,48 +390,6 @@ const PeoplePage: React.FC = () => {
           </CardContent>
         </Card>
       </div>
-
-      {/* Cluster Distribution — clickable tiles */}
-      {(() => {
-        const clusterCounts: Record<string, { count: number; totalScore: number }> = {};
-        const activePeople = peopleData.filter(p => p.active_status === 'active' || !p.active_status);
-        activePeople.forEach(p => {
-          const cat = personRoleCategoryMap[p.person_name] || 'Unassigned';
-          if (!clusterCounts[cat]) clusterCounts[cat] = { count: 0, totalScore: 0 };
-          clusterCounts[cat].count++;
-          clusterCounts[cat].totalScore += p.composite_score;
-        });
-        const clusterData = clusterDisplayOrder
-          .filter(c => c !== 'All Clusters' && clusterCounts[c])
-          .map(c => ({ name: c, count: clusterCounts[c].count, avgScore: clusterCounts[c].count > 0 ? clusterCounts[c].totalScore / clusterCounts[c].count : 0 }));
-        Object.keys(clusterCounts).forEach(c => {
-          if (!clusterData.find(d => d.name === c)) {
-            clusterData.push({ name: c, count: clusterCounts[c].count, avgScore: clusterCounts[c].count > 0 ? clusterCounts[c].totalScore / clusterCounts[c].count : 0 });
-          }
-        });
-
-        return (
-          <Card className="bg-gray-900 text-white border-gray-700 mb-8">
-            <CardHeader><CardTitle className="text-teal-400">Role Clusters</CardTitle></CardHeader>
-            <CardContent>
-              <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-3">
-                {clusterData.map(c => (
-                  <button key={c.name}
-                    onClick={() => setSelectedRoleCategory(selectedRoleCategory === c.name ? 'All Clusters' : c.name)}
-                    className={`p-3 rounded-lg border text-left transition-colors ${
-                      selectedRoleCategory === c.name ? 'bg-teal-900/50 border-teal-500' : 'bg-gray-800 border-gray-700 hover:border-gray-500'
-                    }`}
-                  >
-                    <p className="text-xs text-gray-400 truncate">{c.name}</p>
-                    <p className="text-2xl font-bold text-white">{c.count}</p>
-                    <p className="text-sm">Avg: <span className={getScoreColor(c.avgScore)}>{c.avgScore.toFixed(1)}</span></p>
-                  </button>
-                ))}
-              </div>
-            </CardContent>
-          </Card>
-        );
-      })()}
 
       {/* Performance Distribution Chart */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
