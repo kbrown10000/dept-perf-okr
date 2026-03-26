@@ -500,11 +500,11 @@ const PeoplePage: React.FC = () => {
                         );
                       })}
                       <TableCell className="text-center">
-                        {isAdmin && bonusRec ? (
+                        {bonusRec ? (
                           <span className={`font-bold text-sm ${bonusRec.adjusted_bonus > 0 ? 'text-green-400' : 'text-gray-500'}`}>
                             ${bonusRec.adjusted_bonus?.toLocaleString() || '0'}
                           </span>
-                        ) : isAdmin ? <span className="text-gray-600 text-xs">—</span> : <span className="text-gray-600 text-xs">🔒</span>}
+                        ) : <span className="text-gray-600 text-xs">—</span>}
                       </TableCell>
                       <TableCell><Badge className={`${getEmploymentTypeBadgeColor(person.employment_type)} text-[10px]`}>{person.employment_type}</Badge></TableCell>
                       <TableCell className="text-gray-300 text-sm">{person.supervisor}</TableCell>
@@ -552,15 +552,11 @@ const PeoplePage: React.FC = () => {
                                 <p className="mb-1"><span className="text-amber-400 font-medium">Actions:</span> {person.specific_actions || 'N/A'}</p>
                               </div>
                               <div>
-                                <h4 className="font-semibold text-teal-300 mb-2">{isAdmin ? 'Cost & Hours' : 'Hours & Utilization'}</h4>
-                                {isAdmin && (
-                                  <>
-                                    <p>Annual Cost: <span className="font-medium text-white">${person.annual_cost?.toLocaleString() || 'N/A'}</span></p>
-                                    <p>Bill Rate: <span className="font-medium text-white">${person.effective_bill_rate?.toFixed(2) || 'N/A'}</span></p>
-                                    <p>Margin/Hr: <span className="font-medium text-white">${person.margin_per_hour?.toFixed(2) || 'N/A'}</span></p>
-                                  </>
-                                )}
-                                <p className={isAdmin ? "mt-2" : ""}>Hours: <span className="font-medium text-white">{person.billable_hours?.toFixed(1)} / {person.total_hours?.toFixed(1)}</span></p>
+                                <h4 className="font-semibold text-teal-300 mb-2">Cost &amp; Hours</h4>
+                                <p>Annual Cost: <span className="font-medium text-white">${person.annual_cost?.toLocaleString() || 'N/A'}</span></p>
+                                <p>Bill Rate: <span className="font-medium text-white">${person.effective_bill_rate?.toFixed(2) || 'N/A'}</span></p>
+                                <p>Margin/Hr: <span className="font-medium text-white">${person.margin_per_hour?.toFixed(2) || 'N/A'}</span></p>
+                                <p className="mt-2">Hours: <span className="font-medium text-white">{person.billable_hours?.toFixed(1)} / {person.total_hours?.toFixed(1)}</span></p>
                                 <p className="mb-1">Util: <span className="font-medium text-white">{(person.utilization_pct || 0).toFixed(1)}%</span></p>
                                 <div className="w-full bg-gray-700 rounded-full h-3 overflow-hidden"><div className="h-3 rounded-full bg-teal-500" style={{ width: `${person.utilization_pct || 0}%` }}></div></div>
                               </div>
@@ -673,7 +669,7 @@ const PeoplePage: React.FC = () => {
                             </Card>
 
                             {/* ═══ COMPONENT 2: Bonus & Compensation Recommendation ═══ */}
-                            {(bonusRec || compPlan) && isAdmin && (
+                            {(bonusRec || compPlan) && (
                               <Card className="bg-gray-900 border-green-700/50">
                                 <CardHeader className="pb-2">
                                   <CardTitle className="text-green-400 flex items-center gap-2">
