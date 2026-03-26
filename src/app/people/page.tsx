@@ -93,6 +93,13 @@ const managerScoreLabels: Record<number, { label: string; color: string }> = {
   5: { label: 'Exceptional', color: 'bg-teal-400 text-gray-900' },
 };
 
+// ─── Security Types ───
+interface SupervisorEmail {
+  supervisor_name: string;
+  email: string;
+  is_admin: boolean;
+}
+
 // ─── Main Component ───
 const PeoplePage: React.FC = () => {
   const [peopleData, setPeopleData] = useState<PersonData[]>([]);
@@ -100,6 +107,7 @@ const PeoplePage: React.FC = () => {
   const [managerReviews, setManagerReviews] = useState<ManagerReview[]>([]);
   const [bonusRecs, setBonusRecs] = useState<BonusRecommendation[]>([]);
   const [compPlans, setCompPlans] = useState<CompPlan[]>([]);
+  const [supervisorEmails, setSupervisorEmails] = useState<SupervisorEmail[]>([]);
   const [selectedDepartment, setSelectedDepartment] = useState<string>('All Departments');
   const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set());
   const [sortBy, setSortBy] = useState<keyof PersonData>('person_name');
@@ -108,6 +116,7 @@ const PeoplePage: React.FC = () => {
   const [selectedEmploymentType, setSelectedEmploymentType] = useState<string>('All');
   const [showDocInfo, setShowDocInfo] = useState<boolean>(false);
   const [currentUserEmail, setCurrentUserEmail] = useState<string | null>(null);
+  const [authLoading, setAuthLoading] = useState<boolean>(true);
   // Manager review form state — keyed by person_name
   const [editingReview, setEditingReview] = useState<string | null>(null);
   const [reviewFormData, setReviewFormData] = useState<Record<string, { score: number; justification: string; evidence: string }>>({});
@@ -115,7 +124,16 @@ const PeoplePage: React.FC = () => {
 
   const supabase = createClient();
   const employmentTypeFilters = ['All', 'W2 Only', 'Contractors Only', 'W2 Salaried', 'W2 Hourly', 'Contractor'];
-  const isAdmin = currentUserEmail === 'kbrown@usdm.com' || currentUserEmail === 'jmorgan@usdm.com';
+
+  // ─── Security: Role Resolution ───
+  const currentUserSupervisorRecord = useMemo(() => {
+    if (!currentUserEmail) return null;
+    return supervisorEmails.find(s => s.email.toLowerCase() === currentUserEmail.toLowerCase()) || null;
+  }, [currentUserEmail, supervisorEmails]);
+
+  const isAdmin = currentUserSupervisorRecord?.is_admin || false;
+  const currentSupervisorName = currentUserSupervisorRecord?.supervisor_name || null;
+  const accessLevel: 'admin' | 'manager' | 'none' = isAdmin ? 'admin' : currentSupervisorName ? 'manager' : 'none';
 
   // Build lookups
   const personRoleCategoryMap = useMemo(() => {
@@ -149,17 +167,21 @@ const PeoplePage: React.FC = () => {
   useEffect(() => {
     const fetchData = async () => {
       // Get current user
+      setAuthLoading(true);
       const { data: { user } } = await supabase.auth.getUser();
       if (user?.email) setCurrentUserEmail(user.email);
 
-      const [scores, costs, kpis, reviews, bonuses, plans] = await Promise.all([
+      const [scores, costs, kpis, reviews, bonuses, plans, supEmails] = await Promise.all([
         supabase.from('mosaic_performance_scores_2025').select('*'),
         supabase.from('mosaic_person_costs_2025').select('*'),
         supabase.from('mosaic_role_kpis_2025').select('*'),
         supabase.from('mosaic_manager_reviews_2025').select('*').eq('is_current', true),
         supabase.from('mosaic_bonus_recommendations_2025').select('*'),
         supabase.from('mosaic_bonus_comp_plans').select('*'),
+        supabase.from('mosaic_supervisor_emails').select('*'),
       ]);
+
+      if (supEmails.data) setSupervisorEmails(supEmails.data);
 
       if (kpis.data) setRoleKpis(kpis.data);
       if (reviews.data) setManagerReviews(reviews.data);
@@ -184,6 +206,7 @@ const PeoplePage: React.FC = () => {
         });
         setPeopleData(mergedData);
       }
+      setAuthLoading(false);
     };
     fetchData();
   }, [supabase]);
@@ -231,6 +254,15 @@ const PeoplePage: React.FC = () => {
   // ─── Filter & Sort ───
   const filteredPeople = useMemo(() => {
     let filtered = peopleData;
+
+    // ─── SECURITY FILTER: Managers see only their direct reports ───
+    if (accessLevel === 'manager' && currentSupervisorName) {
+      filtered = filtered.filter(p => p.supervisor === currentSupervisorName);
+    } else if (accessLevel === 'none') {
+      filtered = []; // No access — empty list
+    }
+    // admins see all
+
     if (!showInactive) filtered = filtered.filter(p => p.active_status === 'active' || !p.active_status);
     if (selectedDepartment !== 'All Departments') filtered = filtered.filter(p => getDepartmentDisplayName(p.department) === selectedDepartment);
     if (selectedEmploymentType !== 'All') {
@@ -244,7 +276,7 @@ const PeoplePage: React.FC = () => {
       if (typeof aV === 'number' && typeof bV === 'number') return sortOrder === 'asc' ? aV - bV : bV - aV;
       return 0;
     });
-  }, [peopleData, selectedDepartment, selectedEmploymentType, sortBy, sortOrder, showInactive]);
+  }, [peopleData, selectedDepartment, selectedEmploymentType, sortBy, sortOrder, showInactive, accessLevel, currentSupervisorName]);
 
   const handleSort = (col: keyof PersonData) => { if (sortBy === col) setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc'); else { setSortBy(col); setSortOrder('asc'); } };
   const toggleRow = (name: string) => { setExpandedRows(prev => { const s = new Set(prev); s.has(name) ? s.delete(name) : s.add(name); return s; }); };
@@ -279,9 +311,48 @@ const PeoplePage: React.FC = () => {
   ];
 
   // ─── Render ───
+  if (authLoading) {
+    return (
+      <div className="container mx-auto p-8 bg-[#0a101e] text-gray-100 min-h-screen flex items-center justify-center">
+        <p className="text-gray-400 text-lg">Loading...</p>
+      </div>
+    );
+  }
+
+  if (accessLevel === 'none') {
+    return (
+      <div className="container mx-auto p-8 bg-[#0a101e] text-gray-100 min-h-screen">
+        <h1 className="text-4xl font-bold mb-4 text-white">People Performance</h1>
+        <Card className="bg-red-900/20 border-red-700">
+          <CardContent className="p-6">
+            <h3 className="text-red-400 font-bold text-lg mb-2">🔒 Access Restricted</h3>
+            <p className="text-gray-300">Your email (<code className="text-white">{currentUserEmail}</code>) is not authorized to view this page.</p>
+            <p className="text-gray-400 mt-2">Only managers can view their direct reports. Admins can view all employees.</p>
+            <p className="text-gray-500 mt-4 text-sm">If you believe this is an error, contact Joe Morgan or Kevin Brown.</p>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
   return (
     <div className="container mx-auto p-8 bg-[#0a101e] text-gray-100 min-h-screen">
       <h1 className="text-4xl font-bold mb-2 text-white">People Performance</h1>
+
+      {/* Security Banner */}
+      <div className={`mb-4 px-4 py-2 rounded-lg text-sm flex items-center gap-3 ${
+        isAdmin ? 'bg-teal-900/30 border border-teal-700/50' : 'bg-blue-900/30 border border-blue-700/50'
+      }`}>
+        <span className="text-lg">{isAdmin ? '🔓' : '🔒'}</span>
+        <span className={isAdmin ? 'text-teal-400' : 'text-blue-400'}>
+          {isAdmin ? (
+            <>Admin Access — viewing all {peopleData.filter(p => p.active_status === 'active' || !p.active_status).length} employees</>
+          ) : (
+            <>Manager View — {currentSupervisorName} — viewing {filteredPeople.length} direct reports</>
+          )}
+        </span>
+        <span className="text-gray-500 ml-auto text-xs">{currentUserEmail}</span>
+      </div>
 
       {/* Documentation InfoBox */}
       <button onClick={() => setShowDocInfo(!showDocInfo)} className="flex items-center gap-2 text-gray-400 hover:text-teal-400 mb-6 text-sm">
@@ -389,7 +460,7 @@ const PeoplePage: React.FC = () => {
                 const bonusRec = bonusRecMap[person.person_name];
                 const compPlan = compPlanMap[person.person_name];
                 const isEditing = editingReview === person.person_name;
-                const canEdit = isAdmin || (currentUserEmail && person.supervisor && currentUserEmail.toLowerCase().includes(person.supervisor.toLowerCase().split(' ')[0]));
+                const canEdit = isAdmin || (currentSupervisorName && person.supervisor === currentSupervisorName);
 
                 return (
                   <React.Fragment key={person.person_name}>
@@ -429,11 +500,11 @@ const PeoplePage: React.FC = () => {
                         );
                       })}
                       <TableCell className="text-center">
-                        {bonusRec ? (
+                        {isAdmin && bonusRec ? (
                           <span className={`font-bold text-sm ${bonusRec.adjusted_bonus > 0 ? 'text-green-400' : 'text-gray-500'}`}>
                             ${bonusRec.adjusted_bonus?.toLocaleString() || '0'}
                           </span>
-                        ) : <span className="text-gray-600 text-xs">—</span>}
+                        ) : isAdmin ? <span className="text-gray-600 text-xs">—</span> : <span className="text-gray-600 text-xs">🔒</span>}
                       </TableCell>
                       <TableCell><Badge className={`${getEmploymentTypeBadgeColor(person.employment_type)} text-[10px]`}>{person.employment_type}</Badge></TableCell>
                       <TableCell className="text-gray-300 text-sm">{person.supervisor}</TableCell>
@@ -481,11 +552,15 @@ const PeoplePage: React.FC = () => {
                                 <p className="mb-1"><span className="text-amber-400 font-medium">Actions:</span> {person.specific_actions || 'N/A'}</p>
                               </div>
                               <div>
-                                <h4 className="font-semibold text-teal-300 mb-2">Cost &amp; Hours</h4>
-                                <p>Annual Cost: <span className="font-medium text-white">${person.annual_cost?.toLocaleString() || 'N/A'}</span></p>
-                                <p>Bill Rate: <span className="font-medium text-white">${person.effective_bill_rate?.toFixed(2) || 'N/A'}</span></p>
-                                <p>Margin/Hr: <span className="font-medium text-white">${person.margin_per_hour?.toFixed(2) || 'N/A'}</span></p>
-                                <p className="mt-2">Hours: <span className="font-medium text-white">{person.billable_hours?.toFixed(1)} / {person.total_hours?.toFixed(1)}</span></p>
+                                <h4 className="font-semibold text-teal-300 mb-2">{isAdmin ? 'Cost & Hours' : 'Hours & Utilization'}</h4>
+                                {isAdmin && (
+                                  <>
+                                    <p>Annual Cost: <span className="font-medium text-white">${person.annual_cost?.toLocaleString() || 'N/A'}</span></p>
+                                    <p>Bill Rate: <span className="font-medium text-white">${person.effective_bill_rate?.toFixed(2) || 'N/A'}</span></p>
+                                    <p>Margin/Hr: <span className="font-medium text-white">${person.margin_per_hour?.toFixed(2) || 'N/A'}</span></p>
+                                  </>
+                                )}
+                                <p className={isAdmin ? "mt-2" : ""}>Hours: <span className="font-medium text-white">{person.billable_hours?.toFixed(1)} / {person.total_hours?.toFixed(1)}</span></p>
                                 <p className="mb-1">Util: <span className="font-medium text-white">{(person.utilization_pct || 0).toFixed(1)}%</span></p>
                                 <div className="w-full bg-gray-700 rounded-full h-3 overflow-hidden"><div className="h-3 rounded-full bg-teal-500" style={{ width: `${person.utilization_pct || 0}%` }}></div></div>
                               </div>
@@ -598,7 +673,7 @@ const PeoplePage: React.FC = () => {
                             </Card>
 
                             {/* ═══ COMPONENT 2: Bonus & Compensation Recommendation ═══ */}
-                            {(bonusRec || compPlan) && (
+                            {(bonusRec || compPlan) && isAdmin && (
                               <Card className="bg-gray-900 border-green-700/50">
                                 <CardHeader className="pb-2">
                                   <CardTitle className="text-green-400 flex items-center gap-2">
