@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import { useSession } from 'next-auth/react';
 import { createClient } from '@/lib/supabase/client';
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
@@ -11,7 +12,7 @@ import {
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { ChevronDown, ChevronUp, Info, Save, Edit2, Star, DollarSign, TrendingUp, AlertTriangle } from 'lucide-react';
+import { ChevronDown, ChevronUp, Info, Save, Edit2, Star, DollarSign, TrendingUp, AlertTriangle, Search, X } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, Radar } from 'recharts';
 
 // ─── Interfaces ───
@@ -114,14 +115,16 @@ const PeoplePage: React.FC = () => {
   const [kpiMeasurements, setKpiMeasurements] = useState<KpiMeasurement[]>([]);
   const [supervisorEmails, setSupervisorEmails] = useState<SupervisorEmail[]>([]);
   const [selectedDepartment, setSelectedDepartment] = useState<string>('All Departments');
+  const [searchQuery, setSearchQuery] = useState<string>('');
   const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set());
   const [sortBy, setSortBy] = useState<keyof PersonData>('person_name');
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('asc');
   const [showInactive, setShowInactive] = useState<boolean>(false);
   const [selectedEmploymentType, setSelectedEmploymentType] = useState<string>('All');
   const [showDocInfo, setShowDocInfo] = useState<boolean>(false);
-  const [currentUserEmail, setCurrentUserEmail] = useState<string | null>(null);
-  const [authLoading, setAuthLoading] = useState<boolean>(true);
+  const { data: session, status: sessionStatus } = useSession();
+  const currentUserEmail = session?.user?.email || null;
+  const authLoading = sessionStatus === 'loading';
   // Manager review form state — keyed by person_name
   const [editingReview, setEditingReview] = useState<string | null>(null);
   const [reviewFormData, setReviewFormData] = useState<Record<string, { score: number; justification: string; evidence: string }>>({});
@@ -176,11 +179,6 @@ const PeoplePage: React.FC = () => {
   // ─── Data Fetch ───
   useEffect(() => {
     const fetchData = async () => {
-      // Get current user
-      setAuthLoading(true);
-      const { data: { user } } = await supabase.auth.getUser();
-      if (user?.email) setCurrentUserEmail(user.email);
-
       const [scores, costs, kpis, reviews, bonuses, plans, supEmails, kpiMeas] = await Promise.all([
         supabase.from('mosaic_performance_scores_2025').select('*'),
         supabase.from('mosaic_person_costs_2025').select('*'),
@@ -218,7 +216,6 @@ const PeoplePage: React.FC = () => {
         });
         setPeopleData(mergedData);
       }
-      setAuthLoading(false);
     };
     fetchData();
   }, [supabase]);
@@ -277,6 +274,16 @@ const PeoplePage: React.FC = () => {
 
     if (!showInactive) filtered = filtered.filter(p => p.active_status === 'active' || !p.active_status);
     if (selectedDepartment !== 'All Departments') filtered = filtered.filter(p => getDepartmentDisplayName(p.department) === selectedDepartment);
+    // Search filter (admin only)
+    if (searchQuery.trim()) {
+      const q = searchQuery.trim().toLowerCase();
+      filtered = filtered.filter(p =>
+        p.person_name.toLowerCase().includes(q) ||
+        (p.role_function || '').toLowerCase().includes(q) ||
+        (p.supervisor || '').toLowerCase().includes(q) ||
+        (p.department || '').toLowerCase().includes(q)
+      );
+    }
     if (selectedEmploymentType !== 'All') {
       if (selectedEmploymentType === 'W2 Only') filtered = filtered.filter(p => p.employment_type === 'W2 Salaried' || p.employment_type === 'W2 Hourly');
       else if (selectedEmploymentType === 'Contractors Only') filtered = filtered.filter(p => p.employment_type === 'Contractor');
@@ -288,7 +295,7 @@ const PeoplePage: React.FC = () => {
       if (typeof aV === 'number' && typeof bV === 'number') return sortOrder === 'asc' ? aV - bV : bV - aV;
       return 0;
     });
-  }, [peopleData, selectedDepartment, selectedEmploymentType, sortBy, sortOrder, showInactive, accessLevel, currentSupervisorName]);
+  }, [peopleData, selectedDepartment, selectedEmploymentType, sortBy, sortOrder, showInactive, accessLevel, currentSupervisorName, searchQuery]);
 
   const handleSort = (col: keyof PersonData) => { if (sortBy === col) setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc'); else { setSortBy(col); setSortOrder('asc'); } };
   const toggleRow = (name: string) => { setExpandedRows(prev => { const s = new Set(prev); s.has(name) ? s.delete(name) : s.add(name); return s; }); };
@@ -384,6 +391,25 @@ const PeoplePage: React.FC = () => {
 
       {/* Filters */}
       <div className="mb-6 flex items-center gap-4 flex-wrap">
+        {/* Search — admin only */}
+        {isAdmin && (
+          <div className="relative">
+            <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+            <input
+              type="text"
+              value={searchQuery}
+              onChange={e => setSearchQuery(e.target.value)}
+              placeholder="Search by name, role, supervisor..."
+              className="w-[280px] bg-gray-800 text-white border border-gray-700 rounded-md pl-9 pr-8 py-2 text-sm focus:border-teal-500 focus:outline-none placeholder-gray-500"
+            />
+            {searchQuery && (
+              <button onClick={() => setSearchQuery('')} className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-white">
+                <X size={14} />
+              </button>
+            )}
+          </div>
+        )}
+
         <Select onValueChange={(v: string | null) => { if (v) setSelectedDepartment(v) }} defaultValue={selectedDepartment}>
           <SelectTrigger className="w-[240px] bg-gray-800 text-white border-gray-700"><SelectValue>{selectedDepartment}</SelectValue></SelectTrigger>
           <SelectContent className="bg-gray-800 text-white border-gray-700">
