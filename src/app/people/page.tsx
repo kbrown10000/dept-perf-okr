@@ -526,22 +526,106 @@ const PeoplePage: React.FC = () => {
                               </div>
                             </div>
 
-                            {/* Radar Chart */}
-                            {[person.utilization_pct, person.efficiency_score, person.collaboration_score, person.compliance_score, person.revenue_impact_score, person.non_billable_quality_score].filter(s => s !== 0).length > 1 && (
+                            {/* ═══ Role-Specific KPI Performance Breakdown ═══ */}
+                            {personKpis.length > 0 ? (
                               <div>
-                                <h4 className="font-semibold text-teal-300 mb-2">Score Breakdown</h4>
-                                <ResponsiveContainer width="100%" height={300}>
-                                  <RadarChart outerRadius={90} data={[
-                                    { subject: 'Utilization', A: person.utilization_pct || 0 }, { subject: 'Efficiency', A: person.efficiency_score || 0 },
-                                    { subject: 'Collaboration', A: person.collaboration_score || 0 }, { subject: 'Compliance', A: person.compliance_score || 0 },
-                                    { subject: 'Revenue Impact', A: person.revenue_impact_score || 0 }, { subject: 'NB Quality', A: person.non_billable_quality_score || 0 },
-                                  ].filter(i => i.A !== 0)}>
-                                    <PolarGrid stroke="#4a5568" /><PolarAngleAxis dataKey="subject" stroke="#cbd5e0" /><PolarRadiusAxis angle={30} domain={[0, 100]} stroke="#cbd5e0" />
-                                    <Radar name={person.person_name} dataKey="A" stroke="#64C4DD" fill="#64C4DD" fillOpacity={0.6} />
-                                  </RadarChart>
-                                </ResponsiveContainer>
+                                <h4 className="font-semibold text-teal-300 mb-3">
+                                  Performance Breakdown — <span className="text-white">{personRoleCategory}</span>
+                                  {personKpis[0].role_title && personKpis[0].role_title !== person.role_function && (
+                                    <span className="text-gray-400 text-sm font-normal ml-2">({personKpis[0].role_title})</span>
+                                  )}
+                                </h4>
+                                {/* KPI Radar — role-specific axes */}
+                                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                                  <div>
+                                    <ResponsiveContainer width="100%" height={280}>
+                                      <RadarChart outerRadius={80} data={personKpis.map(kpi => {
+                                        // Map KPI to a relevant system score where possible
+                                        const kpiLower = kpi.kpi_name.toLowerCase();
+                                        let score = 0;
+                                        if (kpiLower.includes('utilization') || kpiLower.includes('billing continuity')) score = person.utilization_pct || 0;
+                                        else if (kpiLower.includes('quality') || kpiLower.includes('deliverable') || kpiLower.includes('client satisfaction') || kpiLower.includes('star rating')) score = person.compliance_score || person.efficiency_score || 0;
+                                        else if (kpiLower.includes('revenue') || kpiLower.includes('gp') || kpiLower.includes('profit') || kpiLower.includes('margin') || kpiLower.includes('bookings') || kpiLower.includes('pipeline')) score = person.revenue_impact_score || 0;
+                                        else if (kpiLower.includes('team') || kpiLower.includes('management') || kpiLower.includes('engagement') || kpiLower.includes('coaching') || kpiLower.includes('retention')) score = person.collaboration_score || 0;
+                                        else if (kpiLower.includes('compliance') || kpiLower.includes('accuracy') || kpiLower.includes('audit') || kpiLower.includes('security')) score = person.compliance_score || 0;
+                                        else if (kpiLower.includes('efficiency') || kpiLower.includes('process') || kpiLower.includes('throughput') || kpiLower.includes('timeliness')) score = person.efficiency_score || 0;
+                                        else if (kpiLower.includes('lead gen') || kpiLower.includes('campaign') || kpiLower.includes('brand') || kpiLower.includes('marketing')) score = person.non_billable_quality_score || 0;
+                                        else score = person.composite_score * 0.8; // fallback: proportional to composite
+                                        return { subject: kpi.kpi_name.length > 25 ? kpi.kpi_name.substring(0, 22) + '...' : kpi.kpi_name, A: Math.min(score, 100), fullMark: 100 };
+                                      })}>
+                                        <PolarGrid stroke="#4a5568" />
+                                        <PolarAngleAxis dataKey="subject" stroke="#cbd5e0" tick={{ fontSize: 11 }} />
+                                        <PolarRadiusAxis angle={30} domain={[0, 100]} stroke="#cbd5e0" />
+                                        <Radar name={person.person_name} dataKey="A" stroke="#64C4DD" fill="#64C4DD" fillOpacity={0.6} />
+                                        <Tooltip contentStyle={{ backgroundColor: '#1f2937', borderColor: '#4a5568', borderRadius: '0.25rem' }} />
+                                      </RadarChart>
+                                    </ResponsiveContainer>
+                                  </div>
+                                  <div className="space-y-3">
+                                    {personKpis.map(kpi => {
+                                      const w = kpi.weight_pct || 0;
+                                      const wc = (n: number) => n >= 50 ? 'bg-red-700' : n >= 30 ? 'bg-orange-600' : n >= 15 ? 'bg-yellow-500' : 'bg-green-600';
+                                      // Map KPI to best available score
+                                      const kpiLower = kpi.kpi_name.toLowerCase();
+                                      let mappedScore = 0;
+                                      if (kpiLower.includes('utilization') || kpiLower.includes('billing continuity')) mappedScore = person.utilization_pct || 0;
+                                      else if (kpiLower.includes('quality') || kpiLower.includes('deliverable') || kpiLower.includes('client satisfaction') || kpiLower.includes('star rating')) mappedScore = person.compliance_score || person.efficiency_score || 0;
+                                      else if (kpiLower.includes('revenue') || kpiLower.includes('gp') || kpiLower.includes('profit') || kpiLower.includes('margin') || kpiLower.includes('bookings') || kpiLower.includes('pipeline')) mappedScore = person.revenue_impact_score || 0;
+                                      else if (kpiLower.includes('team') || kpiLower.includes('management') || kpiLower.includes('engagement')) mappedScore = person.collaboration_score || 0;
+                                      else if (kpiLower.includes('compliance') || kpiLower.includes('accuracy') || kpiLower.includes('audit') || kpiLower.includes('security')) mappedScore = person.compliance_score || 0;
+                                      else if (kpiLower.includes('efficiency') || kpiLower.includes('process') || kpiLower.includes('throughput') || kpiLower.includes('timeliness')) mappedScore = person.efficiency_score || 0;
+                                      else mappedScore = 0;
+
+                                      return (
+                                        <div key={`${kpi.person_name}-${kpi.kpi_number}`} className="bg-gray-700 p-3 rounded-md border border-gray-600">
+                                          <div className="flex items-center justify-between mb-1">
+                                            <p className="font-medium text-white">
+                                              <span className="text-gray-400 text-xs font-mono mr-2">KPI {kpi.kpi_number}</span>
+                                              {kpi.kpi_name}
+                                            </p>
+                                            {mappedScore > 0 && (
+                                              <div className={`rounded px-2 py-0.5 text-xs font-bold text-white ${getHeatColor(mappedScore)}`}>
+                                                {mappedScore.toFixed(0)}
+                                              </div>
+                                            )}
+                                          </div>
+                                          <p className="text-sm text-gray-300 mb-2">{kpi.kpi_description}</p>
+                                          {w > 0 && (
+                                            <div className="flex items-center gap-2 mb-1">
+                                              <span className="w-16 text-xs text-gray-400">Weight:</span>
+                                              <div className="flex-1 bg-gray-600 rounded-full h-2 overflow-hidden"><div className={`h-2 rounded-full ${wc(w)}`} style={{ width: `${w}%` }}></div></div>
+                                              <span className="text-xs text-white font-mono w-8">{w}%</span>
+                                            </div>
+                                          )}
+                                          <div className="flex gap-4 text-xs text-gray-400">
+                                            {kpi.target_value && <span>Target: <span className="text-amber-400">{kpi.target_value}</span></span>}
+                                            <span>Source: {kpi.measurement_source}</span>
+                                          </div>
+                                        </div>
+                                      );
+                                    })}
+                                  </div>
+                                </div>
                               </div>
-                            )}
+                            ) : (person.active_status === 'active' || !person.active_status) && (person.employment_type === 'W2 Salaried' || person.employment_type === 'W2 Hourly') ? (
+                              <div className="p-3 rounded-lg bg-amber-900/30 border border-amber-700">
+                                <p className="text-amber-400 text-sm font-medium">⚠️ No role-specific KPIs assigned yet</p>
+                                <p className="text-gray-400 text-xs mt-1">Showing generic system dimensions instead.</p>
+                                {/* Fallback: generic radar for people without role KPIs */}
+                                {[person.utilization_pct, person.efficiency_score, person.collaboration_score, person.compliance_score, person.revenue_impact_score, person.non_billable_quality_score].filter(s => s !== 0).length > 1 && (
+                                  <ResponsiveContainer width="100%" height={250}>
+                                    <RadarChart outerRadius={80} data={[
+                                      { subject: 'Utilization', A: person.utilization_pct || 0 }, { subject: 'Efficiency', A: person.efficiency_score || 0 },
+                                      { subject: 'Collaboration', A: person.collaboration_score || 0 }, { subject: 'Compliance', A: person.compliance_score || 0 },
+                                      { subject: 'Revenue Impact', A: person.revenue_impact_score || 0 }, { subject: 'NB Quality', A: person.non_billable_quality_score || 0 },
+                                    ].filter(i => i.A !== 0)}>
+                                      <PolarGrid stroke="#4a5568" /><PolarAngleAxis dataKey="subject" stroke="#cbd5e0" /><PolarRadiusAxis angle={30} domain={[0, 100]} stroke="#cbd5e0" />
+                                      <Radar name={person.person_name} dataKey="A" stroke="#64C4DD" fill="#64C4DD" fillOpacity={0.6} />
+                                    </RadarChart>
+                                  </ResponsiveContainer>
+                                )}
+                              </div>
+                            ) : null}
 
                             {/* Three-column detail grid */}
                             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -743,39 +827,7 @@ const PeoplePage: React.FC = () => {
                               </Card>
                             )}
 
-                            {/* Role-Specific KPIs */}
-                            {personKpis.length > 0 ? (
-                              <div>
-                                <h4 className="font-semibold text-teal-300 mt-2 mb-3">Role-Specific KPIs — <span className="text-white">{personRoleCategory}</span></h4>
-                                <div className="space-y-3">
-                                  {personKpis.map(kpi => {
-                                    const w = kpi.weight_pct || 0;
-                                    const wc = (n: number) => n >= 50 ? 'bg-red-700' : n >= 30 ? 'bg-orange-600' : n >= 15 ? 'bg-yellow-500' : 'bg-green-600';
-                                    return (
-                                      <div key={`${kpi.person_name}-${kpi.kpi_number}`} className="bg-gray-700 p-3 rounded-md border border-gray-600">
-                                        <p className="font-medium text-lg text-white mb-1">
-                                          <span className="text-gray-400 text-sm font-mono mr-2">KPI {kpi.kpi_number}</span>{kpi.kpi_name}
-                                          <span className="text-sm text-gray-400 ml-2">({kpi.measurement_source})</span>
-                                        </p>
-                                        <p className="text-sm text-gray-300 mb-2">{kpi.kpi_description}</p>
-                                        {w > 0 && (
-                                          <div className="flex items-center gap-2 mb-1">
-                                            <div className="w-20 text-sm text-gray-300">Weight:</div>
-                                            <div className="w-full bg-gray-600 rounded-full h-2.5 overflow-hidden"><div className={`h-2.5 rounded-full ${wc(w)}`} style={{ width: `${w}%` }}></div></div>
-                                            <span className="text-sm text-white font-mono w-10">{w}%</span>
-                                          </div>
-                                        )}
-                                        {kpi.target_value && <p className="text-sm text-amber-400">Target: {kpi.target_value}</p>}
-                                      </div>
-                                    );
-                                  })}
-                                </div>
-                              </div>
-                            ) : (person.active_status === 'active' || !person.active_status) && (person.employment_type === 'W2 Salaried' || person.employment_type === 'W2 Hourly') ? (
-                              <div className="p-3 rounded-lg bg-amber-900/30 border border-amber-700">
-                                <p className="text-amber-400 text-sm font-medium">⚠️ No role-specific KPIs assigned yet</p>
-                              </div>
-                            ) : null}
+
 
                             {/* Raw Data */}
                             {person.raw_data && Object.keys(person.raw_data).length > 0 && (
