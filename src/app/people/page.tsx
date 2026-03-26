@@ -49,6 +49,10 @@ interface CompPlan {
   person_name: string; base_salary: number; ote: number; bonus_target_pct: number;
   bonus_target_amt: number; bonus_cap_pct: number; bonus_floor_pct: number; level: string;
 }
+interface KpiMeasurement {
+  person_name: string; kpi_name: string; measured_value: number | null;
+  measured_label: string; data_source: string; notes: string;
+}
 interface PersonData extends PerformanceScore, PersonCost {
   parsed_role_alignment_flags?: any;
 }
@@ -107,6 +111,7 @@ const PeoplePage: React.FC = () => {
   const [managerReviews, setManagerReviews] = useState<ManagerReview[]>([]);
   const [bonusRecs, setBonusRecs] = useState<BonusRecommendation[]>([]);
   const [compPlans, setCompPlans] = useState<CompPlan[]>([]);
+  const [kpiMeasurements, setKpiMeasurements] = useState<KpiMeasurement[]>([]);
   const [supervisorEmails, setSupervisorEmails] = useState<SupervisorEmail[]>([]);
   const [selectedDepartment, setSelectedDepartment] = useState<string>('All Departments');
   const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set());
@@ -156,6 +161,11 @@ const PeoplePage: React.FC = () => {
     compPlans.forEach(r => { map[r.person_name] = r; });
     return map;
   }, [compPlans]);
+  const kpiMeasMap = useMemo(() => {
+    const map: Record<string, KpiMeasurement> = {};
+    kpiMeasurements.forEach(m => { map[`${m.person_name}||${m.kpi_name}`] = m; });
+    return map;
+  }, [kpiMeasurements]);
 
   const availableDepartments = useMemo(() => {
     const depts = new Set<string>();
@@ -171,7 +181,7 @@ const PeoplePage: React.FC = () => {
       const { data: { user } } = await supabase.auth.getUser();
       if (user?.email) setCurrentUserEmail(user.email);
 
-      const [scores, costs, kpis, reviews, bonuses, plans, supEmails] = await Promise.all([
+      const [scores, costs, kpis, reviews, bonuses, plans, supEmails, kpiMeas] = await Promise.all([
         supabase.from('mosaic_performance_scores_2025').select('*'),
         supabase.from('mosaic_person_costs_2025').select('*'),
         supabase.from('mosaic_role_kpis_2025').select('*'),
@@ -179,9 +189,11 @@ const PeoplePage: React.FC = () => {
         supabase.from('mosaic_bonus_recommendations_2025').select('*'),
         supabase.from('mosaic_bonus_comp_plans').select('*'),
         supabase.from('mosaic_supervisor_emails').select('*'),
+        supabase.from('mosaic_kpi_measurements_2025').select('*'),
       ]);
 
       if (supEmails.data) setSupervisorEmails(supEmails.data);
+      if (kpiMeas.data) setKpiMeasurements(kpiMeas.data);
 
       if (kpis.data) setRoleKpis(kpis.data);
       if (reviews.data) setManagerReviews(reviews.data);
@@ -540,17 +552,19 @@ const PeoplePage: React.FC = () => {
                                   <div>
                                     <ResponsiveContainer width="100%" height={280}>
                                       <RadarChart outerRadius={80} data={personKpis.map(kpi => {
-                                        // Map KPI to a relevant system score where possible
-                                        const kpiLower = kpi.kpi_name.toLowerCase();
-                                        let score = 0;
-                                        if (kpiLower.includes('utilization') || kpiLower.includes('billing continuity')) score = person.utilization_pct || 0;
-                                        else if (kpiLower.includes('quality') || kpiLower.includes('deliverable') || kpiLower.includes('client satisfaction') || kpiLower.includes('star rating')) score = person.compliance_score || person.efficiency_score || 0;
-                                        else if (kpiLower.includes('revenue') || kpiLower.includes('gp') || kpiLower.includes('profit') || kpiLower.includes('margin') || kpiLower.includes('bookings') || kpiLower.includes('pipeline')) score = person.revenue_impact_score || 0;
-                                        else if (kpiLower.includes('team') || kpiLower.includes('management') || kpiLower.includes('engagement') || kpiLower.includes('coaching') || kpiLower.includes('retention')) score = person.collaboration_score || 0;
-                                        else if (kpiLower.includes('compliance') || kpiLower.includes('accuracy') || kpiLower.includes('audit') || kpiLower.includes('security')) score = person.compliance_score || 0;
-                                        else if (kpiLower.includes('efficiency') || kpiLower.includes('process') || kpiLower.includes('throughput') || kpiLower.includes('timeliness')) score = person.efficiency_score || 0;
-                                        else if (kpiLower.includes('lead gen') || kpiLower.includes('campaign') || kpiLower.includes('brand') || kpiLower.includes('marketing')) score = person.non_billable_quality_score || 0;
-                                        else score = person.composite_score * 0.8; // fallback: proportional to composite
+                                        // Use actual measurement first, then fall back to proxy
+                                        const mKey = `${kpi.person_name}||${kpi.kpi_name}`;
+                                        const meas = kpiMeasMap[mKey];
+                                        let score = meas?.measured_value ?? 0;
+                                        // Fallback to system proxy if no measurement
+                                        if (!score) {
+                                          const kpiLower = kpi.kpi_name.toLowerCase();
+                                          if (kpiLower.includes('utilization') || kpiLower.includes('billing continuity')) score = person.utilization_pct || 0;
+                                          else if (kpiLower.includes('quality') || kpiLower.includes('deliverable') || kpiLower.includes('client satisfaction')) score = person.compliance_score || person.efficiency_score || 0;
+                                          else if (kpiLower.includes('revenue') || kpiLower.includes('gp') || kpiLower.includes('profit') || kpiLower.includes('bookings')) score = person.revenue_impact_score || 0;
+                                          else if (kpiLower.includes('team') || kpiLower.includes('management')) score = person.collaboration_score || 0;
+                                          else score = 0;
+                                        }
                                         return { subject: kpi.kpi_name.length > 25 ? kpi.kpi_name.substring(0, 22) + '...' : kpi.kpi_name, A: Math.min(score, 100), fullMark: 100 };
                                       })}>
                                         <PolarGrid stroke="#4a5568" />
@@ -576,19 +590,37 @@ const PeoplePage: React.FC = () => {
                                       else if (kpiLower.includes('efficiency') || kpiLower.includes('process') || kpiLower.includes('throughput') || kpiLower.includes('timeliness')) mappedScore = person.efficiency_score || 0;
                                       else mappedScore = 0;
 
+                                      // Look up actual measurement
+                                      const measKey = `${kpi.person_name}||${kpi.kpi_name}`;
+                                      const measurement = kpiMeasMap[measKey];
+                                      const actualScore = measurement?.measured_value ?? null;
+                                      const displayScore = actualScore !== null ? actualScore : (mappedScore > 0 ? mappedScore : null);
+                                      const hasMeasurement = actualScore !== null;
+
                                       return (
-                                        <div key={`${kpi.person_name}-${kpi.kpi_number}`} className="bg-gray-700 p-3 rounded-md border border-gray-600">
+                                        <div key={`${kpi.person_name}-${kpi.kpi_number}`} className={`p-3 rounded-md border ${hasMeasurement ? 'bg-gray-700 border-gray-600' : 'bg-gray-700/50 border-gray-600/50 border-dashed'}`}>
                                           <div className="flex items-center justify-between mb-1">
                                             <p className="font-medium text-white">
                                               <span className="text-gray-400 text-xs font-mono mr-2">KPI {kpi.kpi_number}</span>
                                               {kpi.kpi_name}
                                             </p>
-                                            {mappedScore > 0 && (
-                                              <div className={`rounded px-2 py-0.5 text-xs font-bold text-white ${getHeatColor(mappedScore)}`}>
-                                                {mappedScore.toFixed(0)}
+                                            {displayScore !== null ? (
+                                              <div className="flex items-center gap-1">
+                                                <div className={`rounded px-2 py-0.5 text-xs font-bold text-white ${getHeatColor(displayScore)}`}>
+                                                  {displayScore.toFixed(0)}
+                                                </div>
+                                                {!hasMeasurement && <span className="text-gray-500 text-[9px]">proxy</span>}
                                               </div>
+                                            ) : (
+                                              <span className="text-gray-500 text-xs italic">awaiting data</span>
                                             )}
                                           </div>
+                                          {/* Actual measurement detail */}
+                                          {measurement?.measured_label && (
+                                            <p className={`text-xs mb-1 ${hasMeasurement ? 'text-teal-400' : 'text-gray-500'}`}>
+                                              📊 {measurement.measured_label}
+                                            </p>
+                                          )}
                                           <p className="text-sm text-gray-300 mb-2">{kpi.kpi_description}</p>
                                           {w > 0 && (
                                             <div className="flex items-center gap-2 mb-1">
@@ -599,7 +631,7 @@ const PeoplePage: React.FC = () => {
                                           )}
                                           <div className="flex gap-4 text-xs text-gray-400">
                                             {kpi.target_value && <span>Target: <span className="text-amber-400">{kpi.target_value}</span></span>}
-                                            <span>Source: {kpi.measurement_source}</span>
+                                            <span>Source: {measurement?.data_source || kpi.measurement_source}</span>
                                           </div>
                                         </div>
                                       );
