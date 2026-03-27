@@ -332,7 +332,7 @@ const PeoplePage: React.FC = () => {
   // ─── Render ───
   if (authLoading) {
     return (
-      <div className="container mx-auto p-8 bg-[#0a101e] text-gray-100 min-h-screen flex items-center justify-center">
+      <div className="w-full px-6 py-8 bg-[#0a101e] text-gray-100 min-h-screen flex items-center justify-center">
         <p className="text-gray-400 text-lg">Loading...</p>
       </div>
     );
@@ -340,7 +340,7 @@ const PeoplePage: React.FC = () => {
 
   if (accessLevel === 'none') {
     return (
-      <div className="container mx-auto p-8 bg-[#0a101e] text-gray-100 min-h-screen">
+      <div className="w-full px-6 py-8 bg-[#0a101e] text-gray-100 min-h-screen">
         <h1 className="text-4xl font-bold mb-4 text-white">People Performance</h1>
         <Card className="bg-red-900/20 border-red-700">
           <CardContent className="p-6">
@@ -355,7 +355,7 @@ const PeoplePage: React.FC = () => {
   }
 
   return (
-    <div className="container mx-auto p-8 bg-[#0a101e] text-gray-100 min-h-screen">
+    <div className="w-full px-6 py-8 bg-[#0a101e] text-gray-100 min-h-screen">
       <h1 className="text-4xl font-bold mb-2 text-white">People Performance</h1>
 
       {/* Security Banner */}
